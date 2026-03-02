@@ -17,54 +17,83 @@ const NutritionDashboard = () => {
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysis, setAnalysis] = useState(null);
     const [theme, setTheme] = useState('dark');
+    const [debugMsg, setDebugMsg] = useState('');
+    const [patientProfile, setPatientProfile] = useState({
+        age: '', gender: '', occupation: '',
+        hba1c: '', bpSystolic: '', bpDiastolic: '',
+        ldl: '', egfr: ''
+    });
+    const [showProfile, setShowProfile] = useState(true);
     const fileInputRef = useRef(null);
 
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
-    const handleFileUpload = (e) => {
-        const selectedFile = e.target.files?.[0];
-        if (!selectedFile) return;
-        setFile(selectedFile);
-        setPreview(null); // Reset preview while loading
+    const updateProfile = (field, value) => {
+        setPatientProfile(prev => ({ ...prev, [field]: value }));
+    };
 
-        // Compress large mobile images to avoid memory issues
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(selectedFile);
-        img.onload = () => {
-            const MAX_DIM = 1200;
-            let { width, height } = img;
-            if (width > MAX_DIM || height > MAX_DIM) {
-                const scale = MAX_DIM / Math.max(width, height);
-                width = Math.round(width * scale);
-                height = Math.round(height * scale);
+    const handleFileUpload = (e) => {
+        try {
+            setDebugMsg('onChange fired...');
+            const selectedFile = e.target.files?.[0];
+            if (!selectedFile) {
+                setDebugMsg('No file selected');
+                return;
             }
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            setPreview(compressedDataUrl);
-            URL.revokeObjectURL(objectUrl);
-        };
-        img.onerror = () => {
-            // Fallback to FileReader if Image() fails
-            URL.revokeObjectURL(objectUrl);
-            const reader = new FileReader();
-            reader.onloadend = () => setPreview(reader.result);
-            reader.readAsDataURL(selectedFile);
-        };
-        img.src = objectUrl;
+            setDebugMsg(`File: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(0)}KB)`);
+            setFile(selectedFile);
+
+            // Try objectURL first (fastest, most reliable on mobile)
+            try {
+                const objectUrl = URL.createObjectURL(selectedFile);
+                setPreview(objectUrl);
+                setDebugMsg('Preview set via objectURL!');
+
+                // Also read as dataURL in background for AI analysis
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    if (reader.result) {
+                        // Store base64 for later AI use, keep objectURL for display
+                        selectedFile._base64 = reader.result;
+                        setDebugMsg('Image ready for analysis!');
+                    }
+                };
+                reader.readAsDataURL(selectedFile);
+            } catch (err) {
+                setDebugMsg('objectURL failed, trying FileReader: ' + err.message);
+                const reader = new FileReader();
+                reader.onloadend = () => setPreview(reader.result);
+                reader.readAsDataURL(selectedFile);
+            }
+        } catch (err) {
+            setDebugMsg('Upload error: ' + err.message);
+        }
     };
 
     const runAnalysis = async () => {
-        if (!preview) return;
+        if (!preview && !file) return;
         setIsAnalyzing(true);
         setAnalysis(null);
 
         try {
-            const base64 = preview.split(',')[1];
-            const findings = await analyzeFoodImage(base64);
+            // If preview is an objectURL, read the file as base64 first
+            let base64Data;
+            if (file?._base64) {
+                base64Data = file._base64.split(',')[1];
+            } else if (preview?.startsWith('data:')) {
+                base64Data = preview.split(',')[1];
+            } else {
+                // preview is an objectURL, need to convert
+                const resp = await fetch(preview);
+                const blob = await resp.blob();
+                const dataUrl = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+                base64Data = dataUrl.split(',')[1];
+            }
+            const findings = await analyzeFoodImage(base64Data, patientProfile);
 
             if (!findings || !findings.ingredients) {
                 throw new Error("AI failed to identify ingredients. Please try a clearer photo.");
@@ -172,34 +201,118 @@ const NutritionDashboard = () => {
                         {/* Control Column */}
                         <div className="lg:col-span-4 space-y-12">
                             <section className="space-y-8">
-                                <label
-                                    htmlFor="food-image-upload"
-                                    className="group relative block aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 cursor-pointer overflow-hidden bg-[var(--card)]"
-                                >
+                                {/* Upload Area - file input overlaid directly on top for bulletproof mobile support */}
+                                <div className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 cursor-pointer overflow-hidden bg-[var(--card)]">
                                     {preview ? (
                                         <img src={preview} alt="Specimen" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-                                    ) : file && !preview ? (
-                                        <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
-                                            <Loader2 className="w-8 h-8 animate-spin text-[var(--primary)]" />
-                                            <p className="text-[10px] font-bold uppercase tracking-widest">Processing Image...</p>
-                                        </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
                                             <div className="p-4 rounded-full border border-[var(--border)] bg-[var(--background)] group-hover:bg-[var(--card-hover)] transition-colors">
                                                 <Upload className="w-6 h-6" />
                                             </div>
                                             <p className="text-[10px] font-bold uppercase tracking-widest">Awaiting Specimen</p>
+                                            <p className="text-[9px] text-[var(--muted)] opacity-60">Tap to upload or capture</p>
                                         </div>
                                     )}
+                                    {/* Invisible file input covers the ENTIRE area - user taps this directly */}
                                     <input
                                         type="file"
-                                        id="food-image-upload"
-                                        className="hidden"
                                         ref={fileInputRef}
                                         onChange={handleFileUpload}
                                         accept="image/*"
+                                        style={{
+                                            position: 'absolute',
+                                            top: 0, left: 0,
+                                            width: '100%', height: '100%',
+                                            opacity: 0,
+                                            cursor: 'pointer',
+                                            zIndex: 10
+                                        }}
                                     />
-                                </label>
+                                </div>
+
+                                {/* Mobile Debug Info */}
+                                {debugMsg && (
+                                    <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-[10px] font-mono break-all">
+                                        DEBUG: {debugMsg}
+                                    </div>
+                                )}
+
+                                {/* Patient Profile Section */}
+                                <div className="border border-[var(--border)] bg-[var(--card)] rounded-2xl overflow-hidden">
+                                    <button
+                                        onClick={() => setShowProfile(!showProfile)}
+                                        className="w-full flex items-center justify-between p-5 hover:bg-[var(--card-hover)] transition-colors"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <Heart className="w-4 h-4 text-[var(--primary)]" />
+                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--muted)]">Patient Profile</span>
+                                        </div>
+                                        <ChevronRight className={`w-4 h-4 text-[var(--muted)] transition-transform ${showProfile ? 'rotate-90' : ''}`} />
+                                    </button>
+                                    {showProfile && (
+                                        <div className="px-5 pb-5 space-y-4">
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Age</label>
+                                                    <input type="number" placeholder="e.g. 45" value={patientProfile.age} onChange={e => updateProfile('age', e.target.value)}
+                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Gender</label>
+                                                    <select value={patientProfile.gender} onChange={e => updateProfile('gender', e.target.value)}
+                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
+                                                        <option value="">Select</option>
+                                                        <option value="Male">Male</option>
+                                                        <option value="Female">Female</option>
+                                                        <option value="Other">Other</option>
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Occupation</label>
+                                                    <select value={patientProfile.occupation} onChange={e => updateProfile('occupation', e.target.value)}
+                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
+                                                        <option value="">Select</option>
+                                                        <option value="Sedentary">Sedentary/Desk</option>
+                                                        <option value="Moderate">Moderate Activity</option>
+                                                        <option value="Active">Active/Manual</option>
+                                                        <option value="Athlete">Athlete</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-[var(--primary)] uppercase tracking-widest mb-3">Clinical Vitals (Optional)</p>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">HbA1c %</label>
+                                                        <input type="number" step="0.1" placeholder="e.g. 6.5" value={patientProfile.hba1c} onChange={e => updateProfile('hba1c', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">LDL mg/dL</label>
+                                                        <input type="number" placeholder="e.g. 130" value={patientProfile.ldl} onChange={e => updateProfile('ldl', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">BP (Sys/Dia)</label>
+                                                        <div className="flex gap-1">
+                                                            <input type="number" placeholder="120" value={patientProfile.bpSystolic} onChange={e => updateProfile('bpSystolic', e.target.value)}
+                                                                className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                            <span className="text-[var(--muted)] self-center text-xs">/</span>
+                                                            <input type="number" placeholder="80" value={patientProfile.bpDiastolic} onChange={e => updateProfile('bpDiastolic', e.target.value)}
+                                                                className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">eGFR mL/min</label>
+                                                        <input type="number" placeholder="e.g. 90" value={patientProfile.egfr} onChange={e => updateProfile('egfr', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
 
                                 <button
                                     onClick={runAnalysis}
@@ -247,7 +360,7 @@ const NutritionDashboard = () => {
                                     <motion.div
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
-                                        className="space-y-16"
+                                        className="space-y-10"
                                     >
                                         {/* Primary Vital Grid */}
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -287,6 +400,44 @@ const NutritionDashboard = () => {
                                             />
                                         </div>
 
+                                        {/* Clinical Suitability Verdict */}
+                                        {analysis.findings.clinicalSuitability && (
+                                            <section className="space-y-4">
+                                                <div className="flex items-center gap-3 border-b border-[var(--border)] pb-4">
+                                                    <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
+                                                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Clinical Suitability</h3>
+                                                </div>
+                                                <div className={`p-6 rounded-2xl border-2 ${analysis.findings.clinicalSuitability.verdict === 'Safe' ? 'border-emerald-500/30 bg-emerald-500/5' :
+                                                    analysis.findings.clinicalSuitability.verdict === 'Avoid' ? 'border-rose-500/30 bg-rose-500/5' :
+                                                        'border-amber-500/30 bg-amber-500/5'
+                                                    }`}>
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <span className={`text-2xl font-black ${analysis.findings.clinicalSuitability.verdict === 'Safe' ? 'text-emerald-500' :
+                                                            analysis.findings.clinicalSuitability.verdict === 'Avoid' ? 'text-rose-500' :
+                                                                'text-amber-500'
+                                                            }`}>{analysis.findings.clinicalSuitability.verdict === 'Safe' ? '✅' : analysis.findings.clinicalSuitability.verdict === 'Avoid' ? '🚫' : '⚠️'} {analysis.findings.clinicalSuitability.verdict}</span>
+                                                    </div>
+                                                    <p className="text-xs text-[var(--foreground)] leading-relaxed font-medium mb-4">{analysis.findings.clinicalSuitability.explanation}</p>
+                                                    {analysis.findings.clinicalSuitability.markers && (
+                                                        <div className="grid grid-cols-2 gap-3">
+                                                            {analysis.findings.clinicalSuitability.markers.map((m, i) => (
+                                                                <div key={i} className="p-3 rounded-lg bg-[var(--background)] border border-[var(--border)]">
+                                                                    <div className="flex items-center justify-between mb-1">
+                                                                        <span className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest">{m.marker}</span>
+                                                                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-full ${m.verdict === 'Safe' ? 'text-emerald-500 bg-emerald-500/10' :
+                                                                            m.verdict === 'Avoid' ? 'text-rose-500 bg-rose-500/10' :
+                                                                                'text-amber-500 bg-amber-500/10'
+                                                                            }`}>{m.verdict}</span>
+                                                                    </div>
+                                                                    <p className="text-[9px] text-[var(--muted)] leading-relaxed">{m.impact}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </section>
+                                        )}
+
                                         {/* Metabolic Control Center: AI Spike Prediction */}
                                         <section className="space-y-8">
                                             <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
@@ -309,9 +460,9 @@ const NutritionDashboard = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                                 {/* Spike Prediction Visual */}
-                                                <div className="lg:col-span-2 p-8 border border-[var(--border)] bg-[var(--card)] rounded-2xl space-y-6">
+                                                <div className="md:col-span-2 p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <div className="space-y-1">
                                                             <p className="text-[10px] font-black uppercase tracking-widest text-[var(--muted)]">Predicted Glucose Excursion</p>
@@ -321,7 +472,7 @@ const NutritionDashboard = () => {
                                                     </div>
 
                                                     {/* Simple ASCII/Sparkline representation of the curve */}
-                                                    <div className="h-24 flex items-end gap-1 opacity-50">
+                                                    <div className="h-20 flex items-end gap-0.5">
                                                         {analysis.clinical.metabolic.spike.predictedCurve.map((p, i) => (
                                                             <div
                                                                 key={i}

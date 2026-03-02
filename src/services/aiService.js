@@ -5,7 +5,7 @@
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const OPENAI_MODEL = import.meta.env.VITE_OPENAI_API_MODEL || "gpt-4o";
 
-export const analyzeFoodImage = async (base64Image) => {
+export const analyzeFoodImage = async (base64Image, patientProfile = {}) => {
     if (!OPENAI_API_KEY || OPENAI_API_KEY.includes("your_api_key")) {
         // Demo fallback if no API key is provided
         return new Promise((resolve) => {
@@ -48,13 +48,40 @@ export const analyzeFoodImage = async (base64Image) => {
                         { name: "Roti", portionGrams: 60, ingredientDetails: ["Whole Wheat Flour", "Water", "Ghee"] },
                         { name: "Salad", portionGrams: 50, ingredientDetails: ["Cucumber", "Tomato", "Onion", "Lemon"] },
                     ],
-                    segmentation: "Multi-object segmentation complete: OpenAI vision model detected 5 distinct food regions."
+                    segmentation: "Multi-object segmentation complete: OpenAI vision model detected 5 distinct food regions.",
+                    clinicalSuitability: {
+                        verdict: "Caution",
+                        explanation: "Moderate glycemic load with balanced protein. Monitor portion size for optimal blood sugar control.",
+                        markers: [
+                            { marker: "HbA1c", impact: "Moderate carb load may affect glucose levels", verdict: "Caution" },
+                            { marker: "LDL", impact: "Ghee and butter content contributes to saturated fat", verdict: "Caution" },
+                            { marker: "BP", impact: "Moderate sodium from spices and salt", verdict: "Safe" },
+                            { marker: "eGFR", impact: "Protein load is within acceptable range", verdict: "Safe" }
+                        ]
+                    }
                 });
             }, 2000);
         });
     }
 
-    const systemPrompt = `You are a world-class clinical nutritionist and food recognition AI with expertise in identifying foods from photographs with extreme precision. You have deep knowledge of global cuisines, cooking methods, portion sizes, and nutritional composition. 
+    // Build patient context for personalized analysis
+    const hasProfile = patientProfile.age || patientProfile.gender || patientProfile.occupation;
+    const hasVitals = patientProfile.hba1c || patientProfile.ldl || patientProfile.bpSystolic || patientProfile.egfr;
+
+    let patientContext = '';
+    if (hasProfile || hasVitals) {
+        patientContext = '\n\nPATIENT CLINICAL CONTEXT (use this to personalize your analysis):';
+        if (patientProfile.age) patientContext += `\n- Age: ${patientProfile.age} years`;
+        if (patientProfile.gender) patientContext += `\n- Gender: ${patientProfile.gender}`;
+        if (patientProfile.occupation) patientContext += `\n- Activity Level: ${patientProfile.occupation}`;
+        if (patientProfile.hba1c) patientContext += `\n- HbA1c: ${patientProfile.hba1c}% ${parseFloat(patientProfile.hba1c) > 6.5 ? '(ELEVATED - diabetic range)' : parseFloat(patientProfile.hba1c) > 5.7 ? '(PRE-DIABETIC range)' : '(Normal)'}`;
+        if (patientProfile.bpSystolic && patientProfile.bpDiastolic) patientContext += `\n- Blood Pressure: ${patientProfile.bpSystolic}/${patientProfile.bpDiastolic} mmHg ${parseInt(patientProfile.bpSystolic) > 140 ? '(HYPERTENSIVE)' : parseInt(patientProfile.bpSystolic) > 120 ? '(ELEVATED)' : '(Normal)'}`;
+        if (patientProfile.ldl) patientContext += `\n- LDL Cholesterol: ${patientProfile.ldl} mg/dL ${parseInt(patientProfile.ldl) > 160 ? '(HIGH)' : parseInt(patientProfile.ldl) > 130 ? '(BORDERLINE HIGH)' : '(Optimal)'}`;
+        if (patientProfile.egfr) patientContext += `\n- eGFR: ${patientProfile.egfr} mL/min ${parseInt(patientProfile.egfr) < 60 ? '(REDUCED kidney function - restrict protein/potassium/phosphorus)' : parseInt(patientProfile.egfr) < 90 ? '(Mildly reduced)' : '(Normal)'}`;
+        patientContext += '\n\nYou MUST factor these clinical values into your dietaryGuidance, clinicalSuitability verdict, and all recommendations. Be specific about WHY this food is safe/caution/avoid for THIS patient.';
+    }
+
+    const systemPrompt = `You are a world-class clinical nutritionist and food recognition AI with expertise in identifying foods from photographs with extreme precision. You have deep knowledge of global cuisines, cooking methods, portion sizes, and nutritional composition.${patientContext}
 
 CRITICAL RULES:
 - LOOK CAREFULLY at the image. Identify EXACTLY what food items are visible. Do NOT guess or hallucinate items that are not clearly visible.
@@ -62,7 +89,8 @@ CRITICAL RULES:
 - Base portion size estimates on visual cues like plate size, bowl depth, and food spread. Be realistic.
 - All nutritional values must be evidence-based estimates consistent with USDA/IFCT databases for the identified portions.
 - Every numeric value must be a realistic number (not 0 placeholders). Use your clinical knowledge.
-- The dishName must accurately reflect what is ACTUALLY in the image, not what you think it might be part of.`;
+- The dishName must accurately reflect what is ACTUALLY in the image, not what you think it might be part of.
+- You MUST provide a clinicalSuitability section with a verdict (Safe/Caution/Avoid) personalized to the patient's clinical data if provided.`;
 
     const prompt = `
     Analyze this food image with clinical-grade precision. IMPORTANT: Only identify food items that are ACTUALLY VISIBLE in the image. Do not assume or add items that are not present.
@@ -133,7 +161,17 @@ CRITICAL RULES:
           "vitA": <number>, "vitC": <number>, "vitD": <number>
         }
       ],
-      "segmentation": "Description of identified food regions in the image"
+      "segmentation": "Description of identified food regions in the image",
+      "clinicalSuitability": {
+        "verdict": "Safe|Caution|Avoid",
+        "explanation": "1-2 sentence personalized explanation referencing patient's specific clinical markers",
+        "markers": [
+          { "marker": "HbA1c", "impact": "specific impact on this marker", "verdict": "Safe|Caution|Avoid" },
+          { "marker": "BP", "impact": "specific impact", "verdict": "Safe|Caution|Avoid" },
+          { "marker": "LDL", "impact": "specific impact", "verdict": "Safe|Caution|Avoid" },
+          { "marker": "eGFR", "impact": "specific impact", "verdict": "Safe|Caution|Avoid" }
+        ]
+      }
     }
     `;
 
