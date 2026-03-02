@@ -22,13 +22,39 @@ const NutritionDashboard = () => {
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
     const handleFileUpload = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            setFile(file);
+        const selectedFile = e.target.files?.[0];
+        if (!selectedFile) return;
+        setFile(selectedFile);
+        setPreview(null); // Reset preview while loading
+
+        // Compress large mobile images to avoid memory issues
+        const img = new Image();
+        const objectUrl = URL.createObjectURL(selectedFile);
+        img.onload = () => {
+            const MAX_DIM = 1200;
+            let { width, height } = img;
+            if (width > MAX_DIM || height > MAX_DIM) {
+                const scale = MAX_DIM / Math.max(width, height);
+                width = Math.round(width * scale);
+                height = Math.round(height * scale);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            setPreview(compressedDataUrl);
+            URL.revokeObjectURL(objectUrl);
+        };
+        img.onerror = () => {
+            // Fallback to FileReader if Image() fails
+            URL.revokeObjectURL(objectUrl);
             const reader = new FileReader();
             reader.onloadend = () => setPreview(reader.result);
-            reader.readAsDataURL(file);
-        }
+            reader.readAsDataURL(selectedFile);
+        };
+        img.src = objectUrl;
     };
 
     const runAnalysis = async () => {
@@ -136,7 +162,7 @@ const NutritionDashboard = () => {
                         <div className="flex items-center gap-6">
                             <div className="text-right">
                                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Metadata Engine</p>
-                                <p className="text-xs font-mono text-zinc-400 mt-1">GPT-4o Vision · Precision Mode</p>
+                                <p className="text-xs font-mono text-zinc-400 mt-1">GPT-4.1 Vision · Precision Mode</p>
                             </div>
                         </div>
                     </header>
@@ -146,12 +172,17 @@ const NutritionDashboard = () => {
                         {/* Control Column */}
                         <div className="lg:col-span-4 space-y-12">
                             <section className="space-y-8">
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 cursor-pointer overflow-hidden bg-[var(--card)]"
+                                <label
+                                    htmlFor="food-image-upload"
+                                    className="group relative block aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 cursor-pointer overflow-hidden bg-[var(--card)]"
                                 >
                                     {preview ? (
                                         <img src={preview} alt="Specimen" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                    ) : file && !preview ? (
+                                        <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
+                                            <Loader2 className="w-8 h-8 animate-spin text-[var(--primary)]" />
+                                            <p className="text-[10px] font-bold uppercase tracking-widest">Processing Image...</p>
+                                        </div>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
                                             <div className="p-4 rounded-full border border-[var(--border)] bg-[var(--background)] group-hover:bg-[var(--card-hover)] transition-colors">
@@ -160,8 +191,15 @@ const NutritionDashboard = () => {
                                             <p className="text-[10px] font-bold uppercase tracking-widest">Awaiting Specimen</p>
                                         </div>
                                     )}
-                                    <input type="file" hidden ref={fileInputRef} onChange={handleFileUpload} accept="image/*" />
-                                </div>
+                                    <input
+                                        type="file"
+                                        id="food-image-upload"
+                                        className="hidden"
+                                        ref={fileInputRef}
+                                        onChange={handleFileUpload}
+                                        accept="image/*"
+                                    />
+                                </label>
 
                                 <button
                                     onClick={runAnalysis}
