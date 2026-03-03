@@ -14,6 +14,7 @@ import * as clinical from '../utils/clinicalLogic';
 const NutritionDashboard = () => {
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
+    const [base64Data, setBase64Data] = useState(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysis, setAnalysis] = useState(null);
     const [theme, setTheme] = useState('dark');
@@ -32,41 +33,96 @@ const NutritionDashboard = () => {
         setPatientProfile(prev => ({ ...prev, [field]: value }));
     };
 
+    // MOBILE FIX: Use createImageBitmap (most efficient mobile API) to load
+    // the image directly from the File, compress via canvas, then set preview.
+    // This avoids the 7-15MB raw dataURL that crashes mobile Chrome.
     const handleFileUpload = (e) => {
         try {
-            setDebugMsg('onChange fired...');
-            const selectedFile = e.target.files?.[0];
-            if (!selectedFile) {
-                setDebugMsg('No file selected');
-                return;
-            }
-            setDebugMsg(`File: ${selectedFile.name} (${(selectedFile.size / 1024).toFixed(0)}KB)`);
-            setFile(selectedFile);
+            const f = e.target.files?.[0];
+            if (!f) { setDebugMsg('No file selected'); return; }
 
-            // Try objectURL first (fastest, most reliable on mobile)
-            try {
-                const objectUrl = URL.createObjectURL(selectedFile);
-                setPreview(objectUrl);
-                setDebugMsg('Preview set via objectURL!');
+            const name = f.name;
+            const sizeKB = (f.size / 1024).toFixed(0);
+            setDebugMsg(`[1/3] Selected: ${name} (${sizeKB}KB, ${f.type})`);
 
-                // Also read as dataURL in background for AI analysis
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    if (reader.result) {
-                        // Store base64 for later AI use, keep objectURL for display
-                        selectedFile._base64 = reader.result;
-                        setDebugMsg('Image ready for analysis!');
+            // Try createImageBitmap first (best for mobile - no FileReader needed)
+            if (typeof createImageBitmap === 'function') {
+                createImageBitmap(f).then(bitmap => {
+                    setDebugMsg(`[2/3] Loaded: ${bitmap.width}x${bitmap.height} — compressing...`);
+                    let w = bitmap.width, h = bitmap.height;
+                    const maxDim = 1024;
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                        else { w = Math.round(w * maxDim / h); h = maxDim; }
                     }
-                };
-                reader.readAsDataURL(selectedFile);
-            } catch (err) {
-                setDebugMsg('objectURL failed, trying FileReader: ' + err.message);
-                const reader = new FileReader();
-                reader.onloadend = () => setPreview(reader.result);
-                reader.readAsDataURL(selectedFile);
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+                    bitmap.close(); // free memory
+                    const compressed = canvas.toDataURL('image/jpeg', 0.7);
+
+                    // Set ALL state at once — compressed image is small enough for mobile
+                    setPreview(compressed);
+                    setBase64Data(compressed);
+                    setFile(f);
+                    setDebugMsg(`[3/3] ✅ Ready! ${w}x${h} (${(compressed.length / 1024).toFixed(0)}KB)`);
+                }).catch(err => {
+                    setDebugMsg(`createImageBitmap failed: ${err.message} — trying fallback...`);
+                    fallbackReadFile(f, name, sizeKB);
+                });
+            } else {
+                setDebugMsg('No createImageBitmap — using fallback...');
+                fallbackReadFile(f, name, sizeKB);
             }
         } catch (err) {
-            setDebugMsg('Upload error: ' + err.message);
+            setDebugMsg('UPLOAD ERROR: ' + err.message);
+        }
+    };
+
+    // Fallback: FileReader → Image → Canvas → compressed dataURL
+    const fallbackReadFile = (f, name, sizeKB) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            setDebugMsg(`[2/3] Read OK (${(reader.result.length / 1024).toFixed(0)}KB) — compressing...`);
+            const img = new Image();
+            img.onload = () => {
+                let w = img.width, h = img.height;
+                const maxDim = 1024;
+                if (w > maxDim || h > maxDim) {
+                    if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                    else { w = Math.round(w * maxDim / h); h = maxDim; }
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                const compressed = canvas.toDataURL('image/jpeg', 0.7);
+                setPreview(compressed);
+                setBase64Data(compressed);
+                setFile(f);
+                setDebugMsg(`[3/3] ✅ Ready! ${w}x${h} (${(compressed.length / 1024).toFixed(0)}KB)`);
+            };
+            img.onerror = () => {
+                // Last resort: use raw dataURL directly
+                setPreview(reader.result);
+                setBase64Data(reader.result);
+                setFile(f);
+                setDebugMsg(`[3/3] ⚠️ Using raw image (${sizeKB}KB)`);
+            };
+            img.src = reader.result;
+        };
+        reader.onerror = () => {
+            setDebugMsg('❌ FileReader FAILED: ' + (reader.error?.message || 'unknown'));
+        };
+        reader.readAsDataURL(f);
+    };
+
+    // Trigger the hidden file input
+    const triggerFileInput = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
         }
     };
 
@@ -76,24 +132,25 @@ const NutritionDashboard = () => {
         setAnalysis(null);
 
         try {
-            // If preview is an objectURL, read the file as base64 first
-            let base64Data;
-            if (file?._base64) {
-                base64Data = file._base64.split(',')[1];
+            // Get base64 data for AI analysis
+            let b64;
+            if (base64Data) {
+                b64 = base64Data.split(',')[1];
             } else if (preview?.startsWith('data:')) {
-                base64Data = preview.split(',')[1];
-            } else {
-                // preview is an objectURL, need to convert
-                const resp = await fetch(preview);
-                const blob = await resp.blob();
-                const dataUrl = await new Promise((resolve) => {
+                b64 = preview.split(',')[1];
+            } else if (file) {
+                // preview is an objectURL and base64 not ready yet, convert now
+                const dataUrl = await new Promise((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
+                    reader.onerror = () => reject(reader.error);
+                    reader.readAsDataURL(file);
                 });
-                base64Data = dataUrl.split(',')[1];
+                b64 = dataUrl.split(',')[1];
+            } else {
+                throw new Error('No image data available. Please re-select the photo.');
             }
-            const findings = await analyzeFoodImage(base64Data, patientProfile);
+            const findings = await analyzeFoodImage(b64, patientProfile);
 
             if (!findings || !findings.ingredients) {
                 throw new Error("AI failed to identify ingredients. Please try a clearer photo.");
@@ -201,34 +258,56 @@ const NutritionDashboard = () => {
                         {/* Control Column */}
                         <div className="lg:col-span-4 space-y-12">
                             <section className="space-y-8">
-                                {/* Upload Area - file input overlaid directly on top for bulletproof mobile support */}
-                                <div className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 cursor-pointer overflow-hidden bg-[var(--card)]">
+                                {/* HIDDEN file input — outside the preview area so re-renders don't affect it */}
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileUpload}
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                />
+
+                                {/* Preview Area — pure display, no embedded inputs */}
+                                <div className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 overflow-hidden bg-[var(--card)]">
                                     {preview ? (
                                         <img src={preview} alt="Specimen" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
-                                            <div className="p-4 rounded-full border border-[var(--border)] bg-[var(--background)] group-hover:bg-[var(--card-hover)] transition-colors">
-                                                <Upload className="w-6 h-6" />
+                                            <div className="p-4 rounded-full border border-[var(--border)] bg-[var(--background)]">
+                                                <Camera className="w-6 h-6" />
                                             </div>
                                             <p className="text-[10px] font-bold uppercase tracking-widest">Awaiting Specimen</p>
-                                            <p className="text-[9px] text-[var(--muted)] opacity-60">Tap to upload or capture</p>
+                                            <p className="text-[9px] text-[var(--muted)] opacity-60">Use buttons below to upload</p>
                                         </div>
                                     )}
-                                    {/* Invisible file input covers the ENTIRE area - user taps this directly */}
-                                    <input
-                                        type="file"
-                                        ref={fileInputRef}
-                                        onChange={handleFileUpload}
-                                        accept="image/*"
-                                        style={{
-                                            position: 'absolute',
-                                            top: 0, left: 0,
-                                            width: '100%', height: '100%',
-                                            opacity: 0,
-                                            cursor: 'pointer',
-                                            zIndex: 10
+                                </div>
+
+                                {/* Upload Buttons — clearly visible and tappable on mobile */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={triggerFileInput}
+                                        className="flex items-center justify-center gap-2 py-4 px-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--card-hover)] hover:border-[var(--primary)] transition-all active:scale-[0.97] text-[var(--foreground)]"
+                                    >
+                                        <Upload className="w-4 h-4 text-[var(--primary)]" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Upload Photo</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (fileInputRef.current) {
+                                                fileInputRef.current.value = '';
+                                                fileInputRef.current.setAttribute('capture', 'environment');
+                                                fileInputRef.current.click();
+                                                // Remove capture after click so gallery still works
+                                                setTimeout(() => fileInputRef.current?.removeAttribute('capture'), 500);
+                                            }
                                         }}
-                                    />
+                                        className="flex items-center justify-center gap-2 py-4 px-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:bg-[var(--card-hover)] hover:border-[var(--primary)] transition-all active:scale-[0.97] text-[var(--foreground)]"
+                                    >
+                                        <Camera className="w-4 h-4 text-[var(--primary)]" />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Take Photo</span>
+                                    </button>
                                 </div>
 
                                 {/* Mobile Debug Info */}
