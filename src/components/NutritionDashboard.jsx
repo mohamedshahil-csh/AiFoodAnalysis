@@ -267,17 +267,30 @@ const NutritionDashboard = () => {
                                     style={{ display: 'none' }}
                                 />
 
-                                {/* Preview Area — pure display, no embedded inputs */}
+                                {/* Preview Area — shows detected food name */}
                                 <div className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 overflow-hidden bg-[var(--card)]">
                                     {preview ? (
-                                        <img src={preview} alt="Specimen" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                        <>
+                                            <img src={preview} alt={analysis?.findings?.dishName || 'Food photo'} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                            {/* Food Name Overlay */}
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-4 pt-8">
+                                                <p className="text-white text-sm font-extrabold tracking-tight drop-shadow-lg">
+                                                    {analysis?.findings?.dishName || 'Photo ready — tap Analyze'}
+                                                </p>
+                                                {analysis?.findings?.cuisine && (
+                                                    <p className="text-cyan-300 text-[10px] font-bold uppercase tracking-widest mt-1 drop-shadow">
+                                                        {analysis.findings.cuisine} Cuisine
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </>
                                     ) : (
                                         <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--muted)]">
                                             <div className="p-4 rounded-full border border-[var(--border)] bg-[var(--background)]">
                                                 <Camera className="w-6 h-6" />
                                             </div>
-                                            <p className="text-[10px] font-bold uppercase tracking-widest">Awaiting Specimen</p>
-                                            <p className="text-[9px] text-[var(--muted)] opacity-60">Use buttons below to upload</p>
+                                            <p className="text-[10px] font-bold uppercase tracking-widest">Upload Food Photo</p>
+                                            <p className="text-[9px] text-[var(--muted)] opacity-60">Burger, Pizza, Thali & more</p>
                                         </div>
                                     )}
                                 </div>
