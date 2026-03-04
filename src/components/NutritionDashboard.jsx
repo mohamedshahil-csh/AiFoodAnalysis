@@ -1,15 +1,19 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     Camera, Upload, ChevronRight, Activity, Heart, ShieldAlert,
     Scale, FileText, CheckCircle, AlertTriangle, ShieldCheck,
     Zap, Thermometer, Droplets, ArrowUpRight, Copy, Loader2,
-    Sun, Moon, Clock, Brain, Timer, Activity as GutIcon
+    Sun, Moon, Clock, Brain, Timer, Activity as GutIcon,
+    History, Download, UtensilsCrossed
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { analyzeFoodImage } from '../services/aiService';
+import { analyzeFoodImage, generateMealPlan } from '../services/aiService';
 import { mapIngredientsToNutrition, calculateTotals } from '../services/databaseMapping';
 import { generateMetabolicInsights } from '../services/metabolicEngine';
 import * as clinical from '../utils/clinicalLogic';
+import { interpretVital, interpretBMI, generateVitalsHealthReport } from '../services/vitalsInterpreter';
+import { ExerciseSection, LifestyleSection, DailyWellnessPlanSection, HydrationSection, MentalWellnessSection } from './WellnessSections';
+import { HealthScoreBadge, HealthierAlternativesSection, DrugInteractionAlerts, MealHistoryPanel, MealPlanModal, saveMealToHistory, exportToPDF } from './AdvancedFeatures';
 
 const NutritionDashboard = () => {
     const [file, setFile] = useState(null);
@@ -21,11 +25,24 @@ const NutritionDashboard = () => {
     const [debugMsg, setDebugMsg] = useState('');
     const [patientProfile, setPatientProfile] = useState({
         age: '', gender: '', occupation: '',
-        hba1c: '', bpSystolic: '', bpDiastolic: '',
-        ldl: '', egfr: ''
+        weight: '', height: '',
+        hba1c: '', fastingBloodSugar: '', postprandialSugar: '',
+        bpSystolic: '', bpDiastolic: '',
+        totalCholesterol: '', ldl: '', hdl: '', triglycerides: '',
+        egfr: '', creatinine: '', uricAcid: '',
+        tsh: '', hemoglobin: '', heartRate: '', spo2: '',
+        conditions: '', medications: '', allergies: ''
     });
     const [showProfile, setShowProfile] = useState(true);
     const fileInputRef = useRef(null);
+    const dashboardRef = useRef(null);
+    const [showMealHistory, setShowMealHistory] = useState(false);
+    const [showMealPlan, setShowMealPlan] = useState(false);
+    const [mealPlan, setMealPlan] = useState(null);
+    const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+    const [healthReport, setHealthReport] = useState(null);
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const [showHealthReport, setShowHealthReport] = useState(false);
 
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
@@ -208,6 +225,9 @@ const NutritionDashboard = () => {
                     })
                 }
             });
+
+            // Save to meal history
+            saveMealToHistory(findings);
         } catch (err) {
             console.error(err);
             alert(`Analysis failed: ${err.message}`);
@@ -216,9 +236,94 @@ const NutritionDashboard = () => {
         }
     };
 
+    const handleExportPDF = () => {
+        if (dashboardRef.current && analysis) {
+            exportToPDF(dashboardRef, analysis.findings.dishName);
+        }
+    };
+
+    const handleGenerateMealPlan = async () => {
+        setShowMealPlan(true);
+        setIsGeneratingPlan(true);
+        try {
+            const plan = await generateMealPlan(patientProfile, analysis?.findings);
+            setMealPlan(plan);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to generate meal plan: ' + err.message);
+        } finally {
+            setIsGeneratingPlan(false);
+        }
+    };
+
+    const handleGenerateHealthReport = async () => {
+        setIsGeneratingReport(true);
+        setShowHealthReport(true);
+        setHealthReport(null);
+        try {
+            const report = await generateVitalsHealthReport(patientProfile);
+            setHealthReport(report);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to generate health report: ' + err.message);
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
+
+    // Inline VitalFeedback badge component
+    const VitalFeedback = ({ field, value }) => {
+        const result = interpretVital(field, value);
+        if (!result) return null;
+        const colorMap = {
+            emerald: { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', text: '#10b981' },
+            amber: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: '#f59e0b' },
+            orange: { bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)', text: '#f97316' },
+            rose: { bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)', text: '#f43f5e' },
+            violet: { bg: 'rgba(139,92,246,0.12)', border: 'rgba(139,92,246,0.3)', text: '#8b5cf6' },
+        };
+        const c = colorMap[result.color] || colorMap.amber;
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: -4, height: 0 }}
+                animate={{ opacity: 1, y: 0, height: 'auto' }}
+                exit={{ opacity: 0, y: -4, height: 0 }}
+                transition={{ duration: 0.25 }}
+                className={`mt-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-bold leading-snug ${result.color === 'rose' ? 'vital-badge-pulse' : ''}`}
+                style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
+            >
+                <span className="font-black uppercase tracking-wider">{result.label}</span>
+                <span className="block mt-0.5 opacity-80 font-medium" style={{ fontSize: '8px' }}>{result.tip}</span>
+            </motion.div>
+        );
+    };
+
+    const BMIFeedback = () => {
+        const result = interpretBMI(patientProfile.weight, patientProfile.height);
+        if (!result) return null;
+        const colorMap = {
+            emerald: { bg: 'rgba(16,185,129,0.12)', border: 'rgba(16,185,129,0.3)', text: '#10b981' },
+            amber: { bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.3)', text: '#f59e0b' },
+            orange: { bg: 'rgba(249,115,22,0.12)', border: 'rgba(249,115,22,0.3)', text: '#f97316' },
+            rose: { bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.3)', text: '#f43f5e' },
+        };
+        const c = colorMap[result.color] || colorMap.amber;
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-1.5 px-2.5 py-1.5 rounded-lg text-[9px] font-bold leading-snug"
+                style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}
+            >
+                <span className="font-black uppercase tracking-wider">{result.label}</span>
+                <span className="block mt-0.5 opacity-80 font-medium" style={{ fontSize: '8px' }}>{result.tip}</span>
+            </motion.div>
+        );
+    };
+
     return (
         <div className={`${theme} min-h-screen transition-colors duration-500`}>
-            <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] selection:bg-cyan-500/30">
+            <div ref={dashboardRef} className="min-h-screen bg-[var(--background)] text-[var(--foreground)] selection:bg-cyan-500/30">
                 <div className="max-w-[1400px] mx-auto px-6 py-12 lg:py-20">
 
                     {/* Header: Minimalist Precision */}
@@ -252,6 +357,24 @@ const NutritionDashboard = () => {
                             </div>
                         </div>
                     </header>
+
+                    {/* Action Bar */}
+                    {analysis && (
+                        <div className="flex flex-wrap gap-3 mb-8 -mt-12 pb-6 border-b border-[var(--border)]">
+                            <button onClick={() => setShowMealHistory(true)}
+                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all">
+                                <History className="w-3.5 h-3.5" /> Meal History
+                            </button>
+                            <button onClick={handleExportPDF}
+                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-emerald-500 hover:text-emerald-500 transition-all">
+                                <Download className="w-3.5 h-3.5" /> Export PDF
+                            </button>
+                            <button onClick={handleGenerateMealPlan}
+                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--primary)]/10 border border-[var(--primary)]/30 rounded-xl text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-all">
+                                <UtensilsCrossed className="w-3.5 h-3.5" /> Generate Meal Plan
+                            </button>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
 
@@ -338,12 +461,13 @@ const NutritionDashboard = () => {
                                     >
                                         <div className="flex items-center gap-3">
                                             <Heart className="w-4 h-4 text-[var(--primary)]" />
-                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--muted)]">Patient Profile</span>
+                                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--muted)]">Patient Profile & Vitals</span>
                                         </div>
                                         <ChevronRight className={`w-4 h-4 text-[var(--muted)] transition-transform ${showProfile ? 'rotate-90' : ''}`} />
                                     </button>
                                     {showProfile && (
-                                        <div className="px-5 pb-5 space-y-4">
+                                        <div className="px-5 pb-5 space-y-5">
+                                            {/* ── Demographics ── */}
                                             <div className="grid grid-cols-3 gap-3">
                                                 <div className="space-y-1">
                                                     <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Age</label>
@@ -361,7 +485,7 @@ const NutritionDashboard = () => {
                                                     </select>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Occupation</label>
+                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Activity Level</label>
                                                     <select value={patientProfile.occupation} onChange={e => updateProfile('occupation', e.target.value)}
                                                         className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
                                                         <option value="">Select</option>
@@ -372,19 +496,93 @@ const NutritionDashboard = () => {
                                                     </select>
                                                 </div>
                                             </div>
+
+                                            {/* ── Body Metrics ── */}
                                             <div className="border-t border-[var(--border)] pt-3">
-                                                <p className="text-[8px] font-black text-[var(--primary)] uppercase tracking-widest mb-3">Clinical Vitals (Optional)</p>
-                                                <div className="grid grid-cols-2 gap-3">
+                                                <p className="text-[8px] font-black text-violet-500 uppercase tracking-widest mb-3">📐 Body Metrics</p>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Weight (kg)</label>
+                                                        <input type="number" step="0.1" placeholder="e.g. 72" value={patientProfile.weight} onChange={e => updateProfile('weight', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Height (cm)</label>
+                                                        <input type="number" placeholder="e.g. 170" value={patientProfile.height} onChange={e => updateProfile('height', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">BMI</label>
+                                                        <div className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--primary)] font-bold">
+                                                            {patientProfile.weight && patientProfile.height
+                                                                ? (patientProfile.weight / ((patientProfile.height / 100) ** 2)).toFixed(1)
+                                                                : '—'}
+                                                        </div>
+                                                        <AnimatePresence><BMIFeedback /></AnimatePresence>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* ── Blood Sugar Panel ── */}
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-rose-500 uppercase tracking-widest mb-3">🩸 Blood Sugar</p>
+                                                <div className="grid grid-cols-3 gap-3">
                                                     <div className="space-y-1">
                                                         <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">HbA1c %</label>
                                                         <input type="number" step="0.1" placeholder="e.g. 6.5" value={patientProfile.hba1c} onChange={e => updateProfile('hba1c', e.target.value)}
                                                             className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="hba1c" value={patientProfile.hba1c} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Fasting BS</label>
+                                                        <input type="number" placeholder="mg/dL" value={patientProfile.fastingBloodSugar} onChange={e => updateProfile('fastingBloodSugar', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="fastingBloodSugar" value={patientProfile.fastingBloodSugar} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">PP Sugar</label>
+                                                        <input type="number" placeholder="mg/dL" value={patientProfile.postprandialSugar} onChange={e => updateProfile('postprandialSugar', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="postprandialSugar" value={patientProfile.postprandialSugar} /></AnimatePresence>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* ── Lipid Panel ── */}
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-3">💛 Lipid Panel</p>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Total Cholesterol</label>
+                                                        <input type="number" placeholder="mg/dL" value={patientProfile.totalCholesterol} onChange={e => updateProfile('totalCholesterol', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="totalCholesterol" value={patientProfile.totalCholesterol} /></AnimatePresence>
                                                     </div>
                                                     <div className="space-y-1">
                                                         <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">LDL mg/dL</label>
                                                         <input type="number" placeholder="e.g. 130" value={patientProfile.ldl} onChange={e => updateProfile('ldl', e.target.value)}
                                                             className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="ldl" value={patientProfile.ldl} /></AnimatePresence>
                                                     </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">HDL mg/dL</label>
+                                                        <input type="number" placeholder="e.g. 55" value={patientProfile.hdl} onChange={e => updateProfile('hdl', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="hdl" value={patientProfile.hdl} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Triglycerides</label>
+                                                        <input type="number" placeholder="mg/dL" value={patientProfile.triglycerides} onChange={e => updateProfile('triglycerides', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="triglycerides" value={patientProfile.triglycerides} /></AnimatePresence>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* ── BP & Organ Function ── */}
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-[var(--primary)] uppercase tracking-widest mb-3">🫀 Cardiovascular & Organ Function</p>
+                                                <div className="grid grid-cols-2 gap-3">
                                                     <div className="space-y-1">
                                                         <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">BP (Sys/Dia)</label>
                                                         <div className="flex gap-1">
@@ -394,17 +592,219 @@ const NutritionDashboard = () => {
                                                             <input type="number" placeholder="80" value={patientProfile.bpDiastolic} onChange={e => updateProfile('bpDiastolic', e.target.value)}
                                                                 className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
                                                         </div>
+                                                        <AnimatePresence><VitalFeedback field="bpSystolic" value={patientProfile.bpSystolic} /></AnimatePresence>
+                                                        <AnimatePresence><VitalFeedback field="bpDiastolic" value={patientProfile.bpDiastolic} /></AnimatePresence>
                                                     </div>
                                                     <div className="space-y-1">
                                                         <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">eGFR mL/min</label>
                                                         <input type="number" placeholder="e.g. 90" value={patientProfile.egfr} onChange={e => updateProfile('egfr', e.target.value)}
                                                             className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="egfr" value={patientProfile.egfr} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Creatinine</label>
+                                                        <input type="number" step="0.1" placeholder="mg/dL" value={patientProfile.creatinine} onChange={e => updateProfile('creatinine', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="creatinine" value={patientProfile.creatinine} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Uric Acid</label>
+                                                        <input type="number" step="0.1" placeholder="mg/dL" value={patientProfile.uricAcid} onChange={e => updateProfile('uricAcid', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="uricAcid" value={patientProfile.uricAcid} /></AnimatePresence>
                                                     </div>
                                                 </div>
+                                            </div>
+
+                                            {/* ── Additional Vitals ── */}
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-3">🩺 Additional Vitals</p>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">TSH (Thyroid)</label>
+                                                        <input type="number" step="0.01" placeholder="mIU/L" value={patientProfile.tsh} onChange={e => updateProfile('tsh', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="tsh" value={patientProfile.tsh} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Hemoglobin</label>
+                                                        <input type="number" step="0.1" placeholder="g/dL" value={patientProfile.hemoglobin} onChange={e => updateProfile('hemoglobin', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="hemoglobin" value={patientProfile.hemoglobin} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Heart Rate</label>
+                                                        <input type="number" placeholder="bpm" value={patientProfile.heartRate} onChange={e => updateProfile('heartRate', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="heartRate" value={patientProfile.heartRate} /></AnimatePresence>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">SpO₂ %</label>
+                                                        <input type="number" placeholder="e.g. 98" value={patientProfile.spo2} onChange={e => updateProfile('spo2', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                        <AnimatePresence><VitalFeedback field="spo2" value={patientProfile.spo2} /></AnimatePresence>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* ── Conditions, Medications, Allergies ── */}
+                                            <div className="border-t border-[var(--border)] pt-3">
+                                                <p className="text-[8px] font-black text-pink-500 uppercase tracking-widest mb-3">📋 Medical History</p>
+                                                <div className="space-y-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Conditions</label>
+                                                        <input type="text" placeholder="e.g. Type 2 Diabetes, Hypertension, PCOS" value={patientProfile.conditions} onChange={e => updateProfile('conditions', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Medications</label>
+                                                        <input type="text" placeholder="e.g. Metformin 500mg, Amlodipine 5mg" value={patientProfile.medications} onChange={e => updateProfile('medications', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Food Allergies</label>
+                                                        <input type="text" placeholder="e.g. Peanuts, Shellfish, Gluten" value={patientProfile.allergies} onChange={e => updateProfile('allergies', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* ── AI Health Report Button ── */}
+                                            <div className="border-t border-[var(--border)] pt-4">
+                                                <button
+                                                    onClick={handleGenerateHealthReport}
+                                                    disabled={isGeneratingReport}
+                                                    className="w-full py-4 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-700 hover:to-cyan-600 shadow-[0_0_25px_rgba(139,92,246,0.3)] disabled:opacity-50"
+                                                >
+                                                    {isGeneratingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Brain className="w-4 h-4" />}
+                                                    {isGeneratingReport ? 'Generating AI Report...' : '🧠 Generate AI Health Report'}
+                                                </button>
                                             </div>
                                         </div>
                                     )}
                                 </div>
+
+                                {/* ── AI Health Report Panel ── */}
+                                <AnimatePresence>
+                                    {showHealthReport && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 20 }}
+                                            className="border border-[var(--border)] bg-[var(--card)] rounded-2xl overflow-hidden"
+                                        >
+                                            <div className="flex items-center justify-between p-5 border-b border-[var(--border)] bg-gradient-to-r from-violet-500/10 to-cyan-500/10">
+                                                <div className="flex items-center gap-3">
+                                                    <Brain className="w-4 h-4 text-violet-500" />
+                                                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--muted)]">AI Health Report</span>
+                                                </div>
+                                                <button onClick={() => setShowHealthReport(false)} className="text-[var(--muted)] hover:text-[var(--foreground)] text-xs">✕</button>
+                                            </div>
+
+                                            {isGeneratingReport ? (
+                                                <div className="p-8 flex flex-col items-center gap-4">
+                                                    <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
+                                                    <p className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest">Analyzing your vitals with AI...</p>
+                                                </div>
+                                            ) : healthReport ? (
+                                                <div className="p-5 space-y-5">
+                                                    {/* Summary */}
+                                                    <div className="p-4 rounded-xl bg-[var(--background)] border border-[var(--border)]">
+                                                        <p className="text-xs leading-relaxed text-[var(--foreground)] font-medium">{healthReport.summary}</p>
+                                                    </div>
+
+                                                    {/* Risk Alerts */}
+                                                    {healthReport.riskAlerts?.length > 0 && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-[8px] font-black text-rose-500 uppercase tracking-widest">⚠️ Risk Alerts</p>
+                                                            {healthReport.riskAlerts.map((alert, i) => (
+                                                                <div key={i} className={`p-3 rounded-lg border ${alert.severity === 'high' || alert.severity === 'critical' ? 'border-rose-500/30 bg-rose-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span>{alert.icon}</span>
+                                                                        <span className="text-[10px] font-black text-[var(--foreground)]">{alert.condition}</span>
+                                                                        <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full ${alert.severity === 'high' || alert.severity === 'critical' ? 'text-rose-500 bg-rose-500/10' : 'text-amber-500 bg-amber-500/10'}`}>{alert.severity}</span>
+                                                                    </div>
+                                                                    <p className="text-[9px] text-[var(--muted)] leading-relaxed">{alert.advice}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Superfoods */}
+                                                    {healthReport.foodRecommendations?.superfoods?.length > 0 && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">✅ Superfoods For You</p>
+                                                            <div className="grid grid-cols-1 gap-2">
+                                                                {healthReport.foodRecommendations.superfoods.map((food, i) => (
+                                                                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                                                                        <span className="text-sm">{food.icon}</span>
+                                                                        <div>
+                                                                            <span className="text-[9px] font-black text-emerald-500">{food.name}</span>
+                                                                            <p className="text-[8px] text-[var(--muted)] leading-relaxed mt-0.5">{food.reason}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Foods to Avoid */}
+                                                    {healthReport.foodRecommendations?.foodsToAvoid?.length > 0 && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-[8px] font-black text-rose-500 uppercase tracking-widest">🚫 Foods to Avoid</p>
+                                                            <div className="grid grid-cols-1 gap-2">
+                                                                {healthReport.foodRecommendations.foodsToAvoid.map((food, i) => (
+                                                                    <div key={i} className="flex items-start gap-2 p-2.5 rounded-lg border border-rose-500/20 bg-rose-500/5">
+                                                                        <span className="text-sm">{food.icon}</span>
+                                                                        <div>
+                                                                            <span className="text-[9px] font-black text-rose-500">{food.name}</span>
+                                                                            <p className="text-[8px] text-[var(--muted)] leading-relaxed mt-0.5">{food.reason}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Exercise Plan */}
+                                                    {healthReport.exercisePlan && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-[8px] font-black text-cyan-500 uppercase tracking-widest">🏃 Exercise Plan</p>
+                                                            <div className="p-3 rounded-lg border border-cyan-500/20 bg-cyan-500/5">
+                                                                <p className="text-[10px] font-black text-[var(--foreground)]">{healthReport.exercisePlan.daily?.type}</p>
+                                                                <p className="text-[9px] text-[var(--muted)] mt-1">{healthReport.exercisePlan.daily?.duration} · {healthReport.exercisePlan.daily?.timing}</p>
+                                                                <p className="text-[8px] text-[var(--muted)] mt-1 italic">{healthReport.exercisePlan.daily?.reason}</p>
+                                                            </div>
+                                                            {healthReport.exercisePlan.weekly?.map((day, i) => (
+                                                                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--background)] border border-[var(--border)]">
+                                                                    <span className="text-[9px] font-bold text-[var(--foreground)]">{day.day}</span>
+                                                                    <span className="text-[9px] text-[var(--muted)]">{day.activity}</span>
+                                                                    <span className="text-[7px] font-black uppercase px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500">{day.intensity}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Lifestyle Changes */}
+                                                    {healthReport.lifestyleChanges?.length > 0 && (
+                                                        <div className="space-y-2">
+                                                            <p className="text-[8px] font-black text-violet-500 uppercase tracking-widest">💡 Lifestyle Changes</p>
+                                                            {healthReport.lifestyleChanges.map((change, i) => (
+                                                                <div key={i} className="p-3 rounded-lg border border-violet-500/20 bg-violet-500/5">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span>{change.icon}</span>
+                                                                        <span className="text-[9px] font-black text-violet-400">{change.title}</span>
+                                                                    </div>
+                                                                    <p className="text-[8px] text-[var(--muted)] leading-relaxed">{change.description}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : null}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
 
                                 <button
                                     onClick={runAnalysis}
@@ -811,6 +1211,47 @@ const NutritionDashboard = () => {
                                             </section>
                                         )}
 
+                                        {/* ═══ NEW WELLNESS SECTIONS ═══ */}
+                                        <div className="wellness-divider" />
+
+                                        {/* Exercise & Activity Rx */}
+                                        <ExerciseSection exercisePlan={analysis.findings.exercisePlan} />
+
+                                        <div className="wellness-divider" />
+
+                                        {/* Lifestyle Changes */}
+                                        <LifestyleSection lifestyleChanges={analysis.findings.lifestyleChanges} />
+
+                                        <div className="wellness-divider" />
+
+                                        {/* Daily Wellness Plan */}
+                                        <DailyWellnessPlanSection dailyWellnessPlan={analysis.findings.dailyWellnessPlan} />
+
+                                        <div className="wellness-divider" />
+
+                                        {/* Hydration & Recovery */}
+                                        <HydrationSection hydrationRecovery={analysis.findings.hydrationRecovery} />
+
+                                        <div className="wellness-divider" />
+
+                                        {/* Mental Wellness & Mind-Body Connection */}
+                                        <MentalWellnessSection mentalWellness={analysis.findings.mentalWellness} />
+
+                                        <div className="wellness-divider" />
+
+                                        {/* === ADVANCED FEATURES === */}
+                                        <HealthScoreBadge score={analysis.findings.overallHealthScore} />
+
+                                        <div className="wellness-divider" />
+
+                                        <HealthierAlternativesSection alternatives={analysis.findings.healthierAlternatives} />
+
+                                        <div className="wellness-divider" />
+
+                                        <DrugInteractionAlerts interactions={analysis.findings.drugFoodInteractions} />
+
+                                        <div className="wellness-divider" />
+
                                         {/* Composition Analysis */}
                                         <section className="space-y-8">
                                             <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
@@ -892,6 +1333,10 @@ const NutritionDashboard = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Modals */}
+            <MealHistoryPanel isOpen={showMealHistory} onClose={() => setShowMealHistory(false)} />
+            <MealPlanModal isOpen={showMealPlan} onClose={() => setShowMealPlan(false)} mealPlan={mealPlan} isLoading={isGeneratingPlan} />
         </div>
     );
 };

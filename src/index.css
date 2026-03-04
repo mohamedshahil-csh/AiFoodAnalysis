@@ -84,6 +84,264 @@ body {
   @apply border border-rose-500/30 text-rose-400 bg-rose-500/5;
 }
 
+/* ===== WELLNESS DASHBOARD ENHANCEMENTS ===== */
+
+/* Glassmorphism Card */
+.glass-card {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(34, 211, 238, 0.2);
+  box-shadow: 0 8px 32px rgba(34, 211, 238, 0.08);
+  transform: translateY(-2px);
+}
+
+.dark .glass-card {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root .glass-card {
+  background: rgba(0, 0, 0, 0.02);
+  border-color: rgba(0, 0, 0, 0.06);
+}
+
+:root .glass-card:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(8, 145, 178, 0.3);
+  box-shadow: 0 8px 32px rgba(8, 145, 178, 0.08);
+}
+
+/* Animated Gradient Border */
+.gradient-border {
+  position: relative;
+  overflow: hidden;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.4), rgba(16, 185, 129, 0.4), rgba(139, 92, 246, 0.4));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: gradient-rotate 4s linear infinite;
+  background-size: 300% 300%;
+}
+
+@keyframes gradient-rotate {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Shimmer Animation */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.05), transparent);
+  animation: shimmer 3s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+
+  100% {
+    left: 100%;
+  }
+}
+
+/* Water Fill Animation */
+.water-fill {
+  position: relative;
+  overflow: hidden;
+}
+
+.water-fill::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.1), rgba(34, 211, 238, 0.3));
+  animation: water-rise 2s ease-out forwards;
+  border-radius: inherit;
+}
+
+@keyframes water-rise {
+  from {
+    height: 0%;
+  }
+
+  to {
+    height: var(--fill-level, 50%);
+  }
+}
+
+/* Pulse Glow */
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(34, 211, 238, 0.1);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(34, 211, 238, 0.2);
+  }
+}
+
+/* Timeline Connector */
+.timeline-connector {
+  position: relative;
+  padding-left: 2rem;
+}
+
+.timeline-connector::before {
+  content: '';
+  position: absolute;
+  left: 0.5rem;
+  top: 2rem;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, var(--primary), transparent);
+}
+
+.timeline-dot {
+  position: absolute;
+  left: 0.25rem;
+  top: 0.5rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+}
+
+/* Progress Ring */
+.progress-ring {
+  transform: rotate(-90deg);
+}
+
+.progress-ring-circle {
+  transition: stroke-dashoffset 1.5s ease-out;
+  stroke-linecap: round;
+}
+
+/* Score Gauge */
+.score-gauge {
+  background: conic-gradient(var(--primary) calc(var(--score, 50) * 1%),
+      var(--border) calc(var(--score, 50) * 1%));
+  border-radius: 50%;
+  padding: 4px;
+}
+
+.score-gauge-inner {
+  background: var(--card);
+  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Priority Badge Colors */
+.priority-high {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.priority-medium {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.priority-low {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+/* Category Colors */
+.cat-sleep {
+  --cat-color: #818cf8;
+}
+
+.cat-stress {
+  --cat-color: #c084fc;
+}
+
+.cat-hydration {
+  --cat-color: #22d3ee;
+}
+
+.cat-habits {
+  --cat-color: #f59e0b;
+}
+
+.cat-movement {
+  --cat-color: #10b981;
+}
+
+/* Floating Animation */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Wellness Section Divider */
+.wellness-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  opacity: 0.2;
+  margin: 3rem 0;
+}
+
 ::-webkit-scrollbar {
   width: 4px;
 }
@@ -99,4 +357,21 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+
+/* ===== VITALS BADGE PULSE ===== */
+@keyframes vital-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 12px 2px rgba(244, 63, 94, 0.2);
+  }
+}
+
+.vital-badge-pulse {
+  animation: vital-pulse 2s ease-in-out infinite;
 }
