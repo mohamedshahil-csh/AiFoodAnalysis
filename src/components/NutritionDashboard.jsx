@@ -4,7 +4,7 @@ import {
     Scale, FileText, CheckCircle, AlertTriangle, ShieldCheck,
     Zap, Thermometer, Droplets, ArrowUpRight, Copy, Loader2,
     Sun, Moon, Clock, Brain, Timer, Activity as GutIcon,
-    History, Download, UtensilsCrossed
+    History, Download, UtensilsCrossed, Scan
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeFoodImage, generateMealPlan } from '../services/aiService';
@@ -14,6 +14,7 @@ import * as clinical from '../utils/clinicalLogic';
 import { interpretVital, interpretBMI, generateVitalsHealthReport } from '../services/vitalsInterpreter';
 import { ExerciseSection, LifestyleSection, DailyWellnessPlanSection, HydrationSection, MentalWellnessSection } from './WellnessSections';
 import { HealthScoreBadge, HealthierAlternativesSection, DrugInteractionAlerts, MealHistoryPanel, MealPlanModal, saveMealToHistory, exportToPDF } from './AdvancedFeatures';
+import FaceScanner from './FaceScanner';
 
 const NutritionDashboard = () => {
     const [file, setFile] = useState(null);
@@ -43,6 +44,7 @@ const NutritionDashboard = () => {
     const [healthReport, setHealthReport] = useState(null);
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
     const [showHealthReport, setShowHealthReport] = useState(false);
+    const [showFaceScanner, setShowFaceScanner] = useState(false);
 
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
@@ -467,6 +469,15 @@ const NutritionDashboard = () => {
                                     </button>
                                     {showProfile && (
                                         <div className="px-5 pb-5 space-y-5">
+                                            {/* ── Face Scanner Button ── */}
+                                            <button
+                                                onClick={() => setShowFaceScanner(true)}
+                                                className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)] mb-2"
+                                            >
+                                                <Scan className="w-4 h-4" />
+                                                🧬 Scan Face — Auto-Fill Vitals
+                                            </button>
+
                                             {/* ── Demographics ── */}
                                             <div className="grid grid-cols-3 gap-3">
                                                 <div className="space-y-1">
@@ -1337,6 +1348,14 @@ const NutritionDashboard = () => {
             {/* Modals */}
             <MealHistoryPanel isOpen={showMealHistory} onClose={() => setShowMealHistory(false)} />
             <MealPlanModal isOpen={showMealPlan} onClose={() => setShowMealPlan(false)} mealPlan={mealPlan} isLoading={isGeneratingPlan} />
+            <FaceScanner
+                isOpen={showFaceScanner}
+                onClose={() => setShowFaceScanner(false)}
+                onApplyVitals={(vitals) => {
+                    setPatientProfile(prev => ({ ...prev, ...vitals }));
+                    setShowFaceScanner(false);
+                }}
+            />
         </div>
     );
 };
