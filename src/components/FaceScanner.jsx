@@ -236,7 +236,7 @@ const FaceScanner = ({ isOpen, onClose, onApplyVitals }) => {
             } catch (err) {
                 // Silent fail for gender detection
             }
-        }, 3000);
+        }, 5000);
     };
 
     // -- Start 15-second scan --
