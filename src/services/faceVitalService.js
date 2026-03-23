@@ -3,7 +3,7 @@
  * Handles video analysis and gender detection via the face-vital-inference-engine API.
  */
 
-const API_BASE = '/face-api';
+const API_BASE = import.meta.env.VITE_FACE_VITAL_API_URL || '/face-api';
 
 /**
  * Analyze a recorded video blob via the /analyze endpoint.
