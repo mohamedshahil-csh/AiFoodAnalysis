@@ -1334,8 +1334,8 @@ const NutritionDashboard = () => {
                                             <Camera className="w-12 h-12" />
                                         </div>
                                         <div className="text-center space-y-2 px-12">
-                                            <h2 className="text-lg font-bold text-[var(--muted)]">Diagnostic Module Offline</h2>
-                                            <p className="text-xs font-medium max-w-[280px] leading-relaxed opacity-80">System standby. Awaiting food specimen upload for clinical sequencing.</p>
+                                            <h2 className="text-lg font-bold text-[var(--muted)]">Awaiting Specimen Analysis</h2>
+                                            <p className="text-xs font-medium max-w-[280px] leading-relaxed opacity-80">System standby. Upload a food photo to initialize clinical sequencing.</p>
                                         </div>
                                     </motion.div>
                                 )}

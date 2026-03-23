@@ -4,7 +4,9 @@
  */
 
 // Use environment variable for API base, defaulting to the /face-api proxy for development
-const API_BASE = import.meta.env.VITE_FACE_API_BASE || '/face-api';
+// Use VITE_FACE_VITAL_API_URL from .env, prioritizing absolute URLs to bypass proxy in production
+const API_URL = import.meta.env.VITE_FACE_VITAL_API_URL || import.meta.env.VITE_FACE_API_BASE || '/face-api';
+const API_BASE = API_URL.startsWith('http') ? API_URL : API_URL; // Keep logic simple, if it has http it works as absolute.
 
 /**
  * Analyze a recorded video blob via the /analyze endpoint.
