@@ -196,6 +196,23 @@ export const generateVitalsHealthReport = async (patientProfile = {}) => {
     if (patientProfile.hemoglobin) vitals.push(`Hemoglobin: ${patientProfile.hemoglobin} g/dL`);
     if (patientProfile.heartRate) vitals.push(`Heart Rate: ${patientProfile.heartRate} bpm`);
     if (patientProfile.spo2) vitals.push(`SpO2: ${patientProfile.spo2}%`);
+    
+    // NeuroVitals Advanced Biomarkers
+    if (patientProfile.map) vitals.push(`Mean Arterial Pressure (MAP): ${patientProfile.map} mmHg`);
+    if (patientProfile.pulsePressure) vitals.push(`Pulse Pressure: ${patientProfile.pulsePressure} mmHg`);
+    if (patientProfile.cardiacWorkload) vitals.push(`Cardiac Workload (RPP): ${patientProfile.cardiacWorkload}`);
+    if (patientProfile.respirationRate) vitals.push(`Respiration Rate: ${patientProfile.respirationRate} brpm`);
+    if (patientProfile.prq) vitals.push(`Pulse-Respiration Quotient (PRQ): ${patientProfile.prq}`);
+    if (patientProfile.heartAge) vitals.push(`Biological Heart Age: ${patientProfile.heartAge} years`);
+    if (patientProfile.wellnessScore) vitals.push(`Overall Wellness Score: ${patientProfile.wellnessScore}/100`);
+    if (patientProfile.riskClass) vitals.push(`Clinical Risk Classification: ${patientProfile.riskClass}`);
+    if (patientProfile.ascvdRisk) vitals.push(`ASCVD Risk Layer: ${patientProfile.ascvdRisk}`);
+    if (patientProfile.bpRisk) vitals.push(`Hypertension Risk: ${patientProfile.bpRisk}`);
+    if (patientProfile.glucoseRisk) vitals.push(`Dysglycemia Risk: ${patientProfile.glucoseRisk}`);
+    if (patientProfile.cholesterolRisk) vitals.push(`Dyslipidemia Risk: ${patientProfile.cholesterolRisk}`);
+    if (patientProfile.anemiaRisk) vitals.push(`Anemia Risk: ${patientProfile.anemiaRisk}`);
+    if (patientProfile.fallRisk) vitals.push(`Fall Risk (Proprioception): ${patientProfile.fallRisk}`);
+
     if (patientProfile.conditions) vitals.push(`Known Conditions: ${patientProfile.conditions}`);
     if (patientProfile.medications) vitals.push(`Medications: ${patientProfile.medications}`);
     if (patientProfile.allergies) vitals.push(`Allergies: ${patientProfile.allergies}`);
@@ -261,11 +278,13 @@ export const generateVitalsHealthReport = async (patientProfile = {}) => {
                         role: "system",
                         content: `You are a world-class clinical nutritionist, exercise physiologist, and preventive medicine specialist. Based on the patient's clinical vitals, provide a comprehensive personalized health report.
 
+NEW: You now have access to NeuroVitals™ biomarkers (MAP, Cardiac Workload, Heart Age, and various clinical risk layers). Incorporate these into your analysis of cardiovascular and metabolic health.
+
 CRITICAL RULES:
 - Every recommendation must be SPECIFIC to the patient's actual numbers — do NOT give generic advice.
-- Reference the patient's exact vital values in your advice (e.g., "Your BP of 160/100 indicates Stage 2 Hypertension").
+- Reference the patient's exact vital values in your advice (e.g., "Your Biological Heart Age of 62 years vs your actual age suggests accelerated cardiac aging").
 - Food recommendations must include specific foods with reasons tied to their clinical markers.
-- Exercise must account for their conditions (e.g., avoid heavy lifting with high BP).
+- Exercise must account for their conditions (e.g., avoid heavy lifting with high BP or high fall risk).
 - Be medically accurate and evidence-based. Use clinical guidelines (AHA, ADA, KDIGO, etc.).`
                     },
                     {
