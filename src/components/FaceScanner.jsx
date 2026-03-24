@@ -440,78 +440,133 @@ const FaceScanner = ({ isOpen, onClose, onApplyVitals }) => {
                         </div>
                     )}
 
-                    {/* Results Panel */}
                     {phase === 'results' && mappedVitals && (
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
-                            className="fs-results"
+                            className="fs-results-v2"
                         >
-                            <p className="fs-results-title">
-                                <CheckCircle className="w-4 h-4" style={{ color: '#10b981' }} />
-                                VITALS DETECTED — READY TO AUTO-FILL
-                            </p>
-                            <div className="fs-vitals-grid">
-                                {mappedVitals.heartRate && (
-                                    <div className="fs-vital-card">
-                                        <Heart className="w-3.5 h-3.5" style={{ color: '#f43f5e' }} />
-                                        <span className="fs-vital-label">Heart Rate</span>
-                                        <span className="fs-vital-value">{mappedVitals.heartRate}</span>
-                                        <span className="fs-vital-unit">BPM</span>
-                                    </div>
-                                )}
-                                {mappedVitals.bpSystolic && (
-                                    <div className="fs-vital-card">
-                                        <Activity className="w-3.5 h-3.5" style={{ color: '#8b5cf6' }} />
-                                        <span className="fs-vital-label">Blood Pressure</span>
-                                        <span className="fs-vital-value">{mappedVitals.bpSystolic}/{mappedVitals.bpDiastolic}</span>
-                                        <span className="fs-vital-unit">mmHg</span>
-                                    </div>
-                                )}
-                                {mappedVitals.spo2 && (
-                                    <div className="fs-vital-card">
-                                        <Droplets className="w-3.5 h-3.5" style={{ color: '#06b6d4' }} />
-                                        <span className="fs-vital-label">SpO₂</span>
-                                        <span className="fs-vital-value">{mappedVitals.spo2}</span>
-                                        <span className="fs-vital-unit">%</span>
-                                    </div>
-                                )}
-                                {mappedVitals.hemoglobin && (
-                                    <div className="fs-vital-card">
-                                        <Droplets className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
-                                        <span className="fs-vital-label">Hemoglobin</span>
-                                        <span className="fs-vital-value">{mappedVitals.hemoglobin}</span>
-                                        <span className="fs-vital-unit">g/dL</span>
-                                    </div>
-                                )}
-                                {mappedVitals.hba1c && (
-                                    <div className="fs-vital-card">
-                                        <Activity className="w-3.5 h-3.5" style={{ color: '#ec4899' }} />
-                                        <span className="fs-vital-label">HbA1c</span>
-                                        <span className="fs-vital-value">{mappedVitals.hba1c}</span>
-                                        <span className="fs-vital-unit">%</span>
-                                    </div>
-                                )}
-                                {mappedVitals.age && (
-                                    <div className="fs-vital-card">
-                                        <span style={{ fontSize: '14px' }}>🎂</span>
-                                        <span className="fs-vital-label">Age</span>
-                                        <span className="fs-vital-value">{mappedVitals.age}</span>
-                                        <span className="fs-vital-unit">yrs</span>
-                                    </div>
-                                )}
+                            <div className="fs-results-header">
+                                <CheckCircle className="w-5 h-5 text-emerald-500" />
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black tracking-widest text-[#00f2fe] uppercase">Analysis Complete</span>
+                                    <span className="text-xs font-bold text-[var(--foreground)]">Full Neuro-Biometric Profile Generated</span>
+                                </div>
+                                <div className="ml-auto flex items-center gap-2">
+                                    <span className="text-[8px] font-black text-[var(--muted)] uppercase">Risk Class</span>
+                                    <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase ${
+                                        mappedVitals.riskClass === 'High' ? 'bg-rose-500/20 text-rose-500 border border-rose-500/30' :
+                                        mappedVitals.riskClass === 'Moderate' ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' :
+                                        'bg-emerald-500/20 text-emerald-500 border border-emerald-500/30'
+                                    }`}>
+                                        {mappedVitals.riskClass || 'Low'}
+                                    </span>
+                                </div>
                             </div>
 
-                            {/* Signal quality */}
-                            {results?.SignalQualityIndex != null && (
-                                <div className="fs-sqi-bar">
-                                    <span>Signal Quality</span>
-                                    <div className="fs-sqi-track">
-                                        <div className="fs-sqi-fill" style={{ width: `${(results.SignalQualityIndex * 100).toFixed(0)}%` }} />
+                            <div className="fs-dashboard-scrollable">
+                                <div className="fs-dashboard-grid">
+                                    {/* Hemodynamic Suite */}
+                                    <div className="fs-clinical-section">
+                                        <div className="fs-section-head">
+                                            <Activity className="w-3 h-3 text-[#00f2fe]" />
+                                            <span>Hemodynamic Expansion</span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>MAP</span>
+                                            <span className="fs-val">{mappedVitals.map || '--'} <small>mmHg</small></span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Pulse Pressure</span>
+                                            <span className="fs-val">{mappedVitals.pulsePressure || '--'} <small>mmHg</small></span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Cardiac Workload</span>
+                                            <span className="fs-val">{mappedVitals.cardiacWorkload || '--'}</span>
+                                        </div>
+                                        <div className="fs-risk-row">
+                                            <span>ASCVD Risk</span>
+                                            <span className={`fs-badge fs-risk-${(mappedVitals.ascvdRisk || 'Low').toLowerCase()}`}>{mappedVitals.ascvdRisk}</span>
+                                        </div>
                                     </div>
-                                    <span>{(results.SignalQualityIndex * 100).toFixed(0)}%</span>
+
+                                    {/* Respiratory Suite */}
+                                    <div className="fs-clinical-section">
+                                        <div className="fs-section-head">
+                                            <Wind className="w-3 h-3 text-[#10b981]" />
+                                            <span>Respiratory Suite</span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Breathing Rate</span>
+                                            <span className="fs-val">{mappedVitals.respirationRate || '--'} <small>BPM</small></span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>PRQ</span>
+                                            <span className="fs-val">{mappedVitals.prq || '--'}</span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>SpO₂</span>
+                                            <span className="fs-val">{mappedVitals.spo2 || '--'} <small>%</small></span>
+                                        </div>
+                                    </div>
+
+                                    {/* Metabolic Risks */}
+                                    <div className="fs-clinical-section">
+                                        <div className="fs-section-head">
+                                            <Droplets className="w-3 h-3 text-orange-400" />
+                                            <span>Metabolic Risks</span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Hemoglobin</span>
+                                            <span className="fs-val">{mappedVitals.hemoglobin || '--'} <small>g/dL</small></span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>HbA1c</span>
+                                            <span className="fs-val">{mappedVitals.hba1c || '--'} <small>%</small></span>
+                                        </div>
+                                        <div className="fs-risk-row">
+                                            <span>Glucose Risk</span>
+                                            <span className={`fs-badge fs-risk-${(mappedVitals.glucoseRisk || 'Low').toLowerCase()}`}>{mappedVitals.glucoseRisk}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Wellness & Safety */}
+                                    <div className="fs-clinical-section">
+                                        <div className="fs-section-head">
+                                            <ShieldCheck className="w-3 h-3 text-violet-400" />
+                                            <span>Wellness & Longevity</span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Physiol. Heart Age</span>
+                                            <span className="fs-val">{mappedVitals.heartAge || '--'} <small>Yrs</small></span>
+                                        </div>
+                                        <div className="fs-metric-row">
+                                            <span>Wellness Score</span>
+                                            <span className="fs-val">{mappedVitals.wellnessScore || '--'} <small>%</small></span>
+                                        </div>
+                                        <div className="fs-risk-row">
+                                            <span>Fall Risk</span>
+                                            <span className={`fs-badge fs-risk-${(mappedVitals.fallRisk || 'Low').toLowerCase()}`}>{mappedVitals.fallRisk}</span>
+                                        </div>
+                                    </div>
                                 </div>
-                            )}
+                            </div>
+
+                            {/* Signal quality / Confidence */}
+                            <div className="fs-sqi-compact">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[7px] font-black uppercase tracking-widest text-[var(--muted)]">Signal Quality Index</span>
+                                    <span className="text-[8px] font-bold text-[#00f2fe]">{mappedVitals.confidence || '0'}%</span>
+                                </div>
+                                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div 
+                                        className="h-full bg-gradient-to-r from-[#00f2fe] to-[#4facfe]"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${mappedVitals.confidence || 0}%` }}
+                                        transition={{ duration: 1 }}
+                                    />
+                                </div>
+                            </div>
                         </motion.div>
                     )}
 

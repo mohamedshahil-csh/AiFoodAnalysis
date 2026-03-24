@@ -84,20 +84,38 @@ export function mapVitalsToProfile(data) {
         mapped.spo2 = feats.spo2.toFixed(1);
     }
 
-    // Respiration Rate (New biomarker for accuracy)
-    if (feats.respiration_rate && feats.respiration_rate > 0) {
-        mapped.respirationRate = Math.round(feats.respiration_rate).toString();
-    }
-
-    // Hemoglobin (estimated)
+    // Metabolic / Hematic (Estimated)
     if (feats.hemoglobin_estimated && feats.hemoglobin_estimated > 0) {
         mapped.hemoglobin = feats.hemoglobin_estimated.toFixed(1);
     }
-
-    // HbA1c (estimated)
     if (feats.hba1c_estimated && feats.hba1c_estimated > 0) {
         mapped.hba1c = feats.hba1c_estimated.toFixed(1);
     }
+
+    // Hemodynamics
+    if (feats.mean_arterial_pressure) mapped.map = feats.mean_arterial_pressure.toFixed(1);
+    if (feats.pulse_pressure) mapped.pulsePressure = feats.pulse_pressure.toFixed(1);
+    if (feats.cardiac_workload) mapped.cardiacWorkload = Math.round(feats.cardiac_workload).toString();
+    
+    // Respiratory
+    if (feats.breathing_rate) mapped.respirationRate = feats.breathing_rate.toFixed(1);
+    if (feats.pulse_respiration_quotient) mapped.prq = feats.pulse_respiration_quotient.toFixed(2);
+
+    // Risks & Wellness
+    if (feats.heart_age) mapped.heartAge = feats.heart_age.toString();
+    if (feats.wellness_score) mapped.wellnessScore = (feats.wellness_score * 100).toFixed(0);
+    
+    // Risk Categories (mapping strings for UI)
+    mapped.ascvdRisk = feats.ascvd_risk || 'Low';
+    mapped.bpRisk = feats.high_bp_risk > 0.7 ? 'High' : (feats.high_bp_risk > 0.3 ? 'Moderate' : 'Low');
+    mapped.glucoseRisk = feats.glucose_risk > 0.7 ? 'High' : (feats.glucose_risk > 0.3 ? 'Moderate' : 'Low');
+    mapped.cholesterolRisk = feats.cholesterol_risk > 0.7 ? 'High' : (feats.cholesterol_risk > 0.3 ? 'Moderate' : 'Low');
+    mapped.anemiaRisk = feats.anemia_risk > 0.7 ? 'High' : (feats.anemia_risk > 0.3 ? 'Moderate' : 'Low');
+    mapped.fallRisk = feats.fall_risk > 0.7 ? 'High' : (feats.fall_risk > 0.3 ? 'Moderate' : 'Low');
+
+    // Mental Health / Stress
+    if (data.MentalHealthRiskClass) mapped.riskClass = data.MentalHealthRiskClass;
+    if (data.SignalQualityIndex) mapped.confidence = (data.SignalQualityIndex * 100).toFixed(0);
 
     // Age & Gender from detection
     if (data.DetectedAge && data.DetectedAge > 0) {

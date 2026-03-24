@@ -32,7 +32,13 @@ const NutritionDashboard = () => {
         totalCholesterol: '', ldl: '', hdl: '', triglycerides: '',
         egfr: '', creatinine: '', uricAcid: '',
         tsh: '', hemoglobin: '', heartRate: '', spo2: '',
-        conditions: '', medications: '', allergies: ''
+        conditions: '', medications: '', allergies: '',
+        // Expanded NeuroVitals
+        map: '', pulsePressure: '', cardiacWorkload: '',
+        respirationRate: '', prq: '', heartAge: '',
+        wellnessScore: '', riskClass: '', confidence: '',
+        ascvdRisk: '', bpRisk: '', glucoseRisk: '',
+        cholesterolRisk: '', anemiaRisk: '', fallRisk: ''
     });
     const [showProfile, setShowProfile] = useState(true);
     const fileInputRef = useRef(null);
