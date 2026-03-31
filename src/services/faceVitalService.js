@@ -136,10 +136,25 @@ export function mapVitalsToProfile(data) {
  */
 export async function checkBackendHealth() {
     try {
-        const response = await fetch(`${API_BASE}/`, { method: 'GET' });
+        // Ensure we don't have double slashes if API_BASE already has one
+        const baseUrl = API_BASE.replace(/\/$/, '');
+        const response = await fetch(`${baseUrl}/`, { 
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        });
+        
+        if (!response.ok) {
+            // Fallback: if root fails, try without trailing slash or just check if detect_gender exists
+            const altResponse = await fetch(baseUrl, { method: 'GET' });
+            if (!altResponse.ok) return false;
+            const data = await altResponse.json();
+            return String(data.status || '').toLowerCase() === 'ok';
+        }
+
         const data = await response.json();
-        return data.status === 'ok';
-    } catch {
+        return String(data.status || '').toLowerCase() === 'ok' || data.service === 'NeuroVitals rPPG API';
+    } catch (err) {
+        console.error("[faceVitalService] Health check failed:", err);
         return false;
     }
 }

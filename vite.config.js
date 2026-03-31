@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
       https: true,
       proxy: {
         '/face-api': {
-          target: env.VITE_FACE_VITAL_API_URL || 'http://192.168.100.104:8114',
+          target: env.VITE_FACE_VITAL_API_URL || 'https://services-api.a2zhealth.in/v1/face-vital',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/face-api/, '')
         }

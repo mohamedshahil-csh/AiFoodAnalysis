@@ -220,6 +220,7 @@ const FaceScanner = ({ isOpen, onClose, onApplyVitals }) => {
                 const data = await detectGender(blob);
 
                 if (data.success) {
+                    setBackendOnline(true); // If we can detect gender, the backend is definitely online!
                     samples.push(data);
                     if (samples.length >= 2) {
                         const genders = samples.map(s => s.gender);
@@ -583,14 +584,14 @@ const FaceScanner = ({ isOpen, onClose, onApplyVitals }) => {
                         {(phase === 'ready' || phase === 'idle') && (
                             <button
                                 onClick={startScan}
-                                disabled={backendOnline === false}
+                                disabled={backendOnline === false && !faceDetected}
                                 className="fs-btn-scan"
                             >
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                                     <circle cx="12" cy="12" r="10" />
                                     <circle cx="12" cy="12" r="3" fill="currentColor" />
                                 </svg>
-                                {backendOnline === false ? 'Backend Offline' : 'Start Face Scan (15s)'}
+                                {backendOnline === false && !faceDetected ? 'Backend Offline' : 'Start Face Scan (15s)'}
                             </button>
                         )}
                         {phase === 'results' && (
