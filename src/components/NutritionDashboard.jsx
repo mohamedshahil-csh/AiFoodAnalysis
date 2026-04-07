@@ -633,14 +633,14 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                     </button>
                                     {showProfile && (
                                         <div className="px-5 pb-5 space-y-5">
-                                            <div className="grid grid-cols-2 gap-3 mb-2">
-                                                <button
+                                            <div className="grid grid-cols-1 gap-3 mb-2">
+                                                {/* <button
                                                     onClick={() => setShowFaceScanner(true)}
                                                     className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
                                                 >
                                                     <Scan className="w-4 h-4" />
                                                     🧬 Scan Face
-                                                </button>
+                                                </button> */}
 
                                                 <button
                                                     onClick={() => setShowHealthHistory(true)}
