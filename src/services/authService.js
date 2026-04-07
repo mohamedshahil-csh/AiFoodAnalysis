@@ -1,71 +1,30 @@
-const API_BASE = '/api/users';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://aifoodanalysisbackendnode.onrender.com';
+const API_BASE = `${BASE_URL}/api/users`;
 
 export const authService = {
   async register({ name, email, password, weight, height }) {
-    try {
-      console.log(`[authService] Registering: ${name} (${email})`);
-      const res = await fetch(`${API_BASE}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, weight, height }),
-      });
-
-      console.log(`[authService] Register response status: ${res.status}`);
-      const contentType = res.headers.get('content-type');
-      console.log(`[authService] Content-Type: ${contentType}`);
-
-      const text = await res.text();
-      console.log(`[authService] Raw Response text:`, text);
-
-      if (!res.ok) {
-        let errorMessage = 'Registration failed';
-        try {
-          const data = JSON.parse(text);
-          errorMessage = data.message || errorMessage;
-        } catch (e) {
-          errorMessage = `Server Error: ${res.status} ${res.statusText}. Response was not JSON.`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      return JSON.parse(text);
-    } catch (error) {
-      console.error('[authService] Registration error:', error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password, weight, height }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Registration failed');
+    return data;
   },
 
   async login({ email, password }) {
-    try {
-      console.log(`[authService] Logging in: ${email}`);
-      const res = await fetch(`${API_BASE}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      console.log(`[authService] Login response status: ${res.status}`);
-      const text = await res.text();
-      
-      if (!res.ok) {
-        let errorMessage = 'Login failed';
-        try {
-          const data = JSON.parse(text);
-          errorMessage = data.message || errorMessage;
-        } catch (e) {
-          errorMessage = `Server Error: ${res.status}. Response was not JSON.`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const data = JSON.parse(text);
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('authUser', JSON.stringify(data.user));
-      return data;
-    } catch (error) {
-      console.error('[authService] Login error:', error);
-      throw error;
-    }
+    const res = await fetch(`${API_BASE}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Login failed');
+    // Store token and user
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('authUser', JSON.stringify(data.user));
+    return data;
   },
 
   logout() {
@@ -99,11 +58,10 @@ export const authService = {
     return data;
   },
 
-
-
   isAuthenticated() {
     return !!localStorage.getItem('authToken');
   },
+
   async updateProfile(updatedData) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
@@ -123,14 +81,13 @@ export const authService = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Update failed');
 
-    // Return the response (usually {message: '...'})
     return data;
   },
 
   async getLatestProfile(userId) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/profile/latest/${userId}`, {
+    const res = await fetch(`${BASE_URL}/api/profile/latest/${userId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -138,14 +95,14 @@ export const authService = {
       },
     });
     const data = await res.json();
-    if (!res.ok) return null; // Or handle error
+    if (!res.ok) return null;
     return data;
   },
 
   async saveProfile(profileData) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/profile`, {
+    const res = await fetch(`${BASE_URL}/api/profile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -161,7 +118,7 @@ export const authService = {
   async getProfileHistory(userId) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/profile/${userId}`, {
+    const res = await fetch(`${BASE_URL}/api/profile/${userId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -173,25 +130,10 @@ export const authService = {
     return data;
   },
 
-  async getLatestProfile(userId) {
-    const token = this.getToken();
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/profile/latest/${userId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to fetch latest profile');
-    return data;
-  },
-
   async saveMeal(mealData) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/meal`, {
+    const res = await fetch(`${BASE_URL}/api/meal`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -207,7 +149,7 @@ export const authService = {
   async getMealHistory(userId) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/meal/${userId}`, {
+    const res = await fetch(`${BASE_URL}/api/meal/${userId}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -222,7 +164,7 @@ export const authService = {
   async getLatestMeals(userId, limit = 10) {
     const token = this.getToken();
     if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`/api/meal/latest-limit/${userId}?limit=${limit}`, {
+    const res = await fetch(`${BASE_URL}/api/meal/latest-limit/${userId}?limit=${limit}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

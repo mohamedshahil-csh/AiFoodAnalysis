@@ -20,10 +20,6 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/face-api/, '')
         },
-        '/api': {
-          target: env.VITE_API_BASE_URL || 'https://aifoodanalysisbackendnode.onrender.com',
-          changeOrigin: true
-        }
       }
     }
   };
