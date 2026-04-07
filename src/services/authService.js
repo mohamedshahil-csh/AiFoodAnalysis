@@ -3,33 +3,50 @@ const API_BASE = `${BASE_URL}/api/users`;
 
 export const authService = {
   async register({ name, email, password, weight, height }) {
-    const res = await fetch(`${API_BASE}/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, weight, height }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Registration failed');
-    return data;
+    try {
+      console.log(`[authService] Registering to: ${API_BASE}/register`);
+      const res = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, weight, height }),
+      });
+      const data = await res.json();
+      console.log(`[authService] Register status: ${res.status}`, data);
+      if (!res.ok) throw new Error(data.message || 'Registration failed');
+      return data;
+    } catch (e) {
+      console.error('[authService] Register error:', e);
+      throw e;
+    }
   },
 
   async login({ email, password }) {
-    const res = await fetch(`${API_BASE}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Login failed');
-    // Store token and user
-    localStorage.setItem('authToken', data.token);
-    localStorage.setItem('authUser', JSON.stringify(data.user));
-    return data;
+    try {
+      console.log(`[authService] Logging into: ${API_BASE}/login`);
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      console.log(`[authService] Login status: ${res.status}`, data);
+
+      if (!res.ok) throw new Error(data.message || 'Login failed');
+      
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('authUser', JSON.stringify(data.user));
+      console.log(`[authService] Token saved to localStorage:`, data.token.substring(0, 20) + '...');
+      return data;
+    } catch (e) {
+      console.error('[authService] Login error:', e);
+      throw e;
+    }
   },
 
   logout() {
     localStorage.removeItem('authToken');
     localStorage.removeItem('authUser');
+    console.log(`[authService] Logged out`);
   },
 
   getToken() {
@@ -42,20 +59,35 @@ export const authService = {
   },
 
   async getMe() {
-    const token = this.getToken();
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${API_BASE}/me`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to fetch profile');
-    // Update cached user
-    localStorage.setItem('authUser', JSON.stringify(data));
-    return data;
+    try {
+      const token = this.getToken();
+      if (!token) throw new Error('Not authenticated');
+      console.log(`[authService] getMe with token:`, token.substring(0, 20) + '...');
+
+      const res = await fetch(`${API_BASE}/me`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      
+      const text = await res.text();
+      console.log(`[authService] getMe status: ${res.status}. Response:`, text);
+
+      if (!res.ok) {
+        let msg = 'Failed to fetch profile';
+        try { msg = JSON.parse(text).message || msg; } catch(e) {}
+        throw new Error(msg);
+      }
+      
+      const data = JSON.parse(text);
+      localStorage.setItem('authUser', JSON.stringify(data));
+      return data;
+    } catch (e) {
+      console.error('[authService] getMe error:', e);
+      throw e;
+    }
   },
 
   isAuthenticated() {
@@ -63,25 +95,37 @@ export const authService = {
   },
 
   async updateProfile(updatedData) {
-    const token = this.getToken();
-    if (!token) throw new Error('Not authenticated');
+    try {
+      const token = this.getToken();
+      if (!token) throw new Error('Not authenticated');
+      const user = this.getUser();
+      if (!user?.id) throw new Error('User not found');
 
-    const user = this.getUser();
-    if (!user?.id) throw new Error('User not found');
+      console.log(`[authService] updateProfile for ${user.id} with token:`, token.substring(0, 20) + '...');
 
-    const res = await fetch(`${API_BASE}/${user.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(updatedData),
-    });
+      const res = await fetch(`${API_BASE}/${user.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(updatedData),
+      });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Update failed');
+      const text = await res.text();
+      console.log(`[authService] updateProfile status: ${res.status}. Response:`, text);
 
-    return data;
+      if (!res.ok) {
+        let msg = 'Update failed';
+        try { msg = JSON.parse(text).message || msg; } catch(e) {}
+        throw new Error(msg);
+      }
+
+      return JSON.parse(text);
+    } catch (e) {
+      console.error('[authService] updateProfile error:', e);
+      throw e;
+    }
   },
 
   async getLatestProfile(userId) {

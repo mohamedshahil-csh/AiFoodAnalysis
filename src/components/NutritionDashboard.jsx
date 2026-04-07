@@ -112,31 +112,57 @@ const NutritionDashboard = ({ user, onLogout }) => {
     const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
     const handleUpdateProfile = async () => {
         setIsUpdatingProfile(true);
+        let userUpdateSuccess = false;
+        let vitalSaveSuccess = false;
+        let errorMessage = '';
+
         try {
             const user = authService.getUser();
-            if (!user?.id) throw new Error('User not found');
+            if (!user?.id) throw new Error('User session not found. Please log in again.');
 
-            // 1. Update Basic Profile (Name, weight/height for redundant storage)
-            await authService.updateProfile({
-                name: userName,
-                email: userEmail,
-                weight: patientProfile.weight,
-                height: patientProfile.height
-            });
+            // 1. Try to Save Clinical Vitals (The most important part)
+            try {
+                console.log("[Dashboard] Attempting to save clinical vitals to /api/profile...");
+                await authService.saveProfile({
+                    user_id: user.id,
+                    ...patientProfile
+                });
+                vitalSaveSuccess = true;
+            } catch (vitalErr) {
+                console.error("Clinical Vitals save failed:", vitalErr);
+                errorMessage += `Vitals Save: ${vitalErr.message}. `;
+            }
 
-            // 2. Save Clinical Vitals to profile history
-            await authService.saveProfile({
-                user_id: user.id,
-                ...patientProfile
-            });
+            // 2. Try to Update Basic User Info (Optional fallback)
+            try {
+                console.log("[Dashboard] Attempting to update user record to /api/users/...");
+                await authService.updateProfile({
+                    name: userName,
+                    email: userEmail,
+                    weight: patientProfile.weight,
+                    height: patientProfile.height
+                });
+                userUpdateSuccess = true;
+                
+                // Refresh cached user data
+                const freshUser = await authService.getMe();
+                setUserName(freshUser.name);
+            } catch (userErr) {
+                console.error("User record update failed:", userErr);
+                errorMessage += `User Update: ${userErr.message}. `;
+            }
 
-            alert('Profile and Clinical Vitals updated successfully!');
-            // Refresh data
-            const freshUser = await authService.getMe();
-            setUserName(freshUser.name);
+            if (vitalSaveSuccess || userUpdateSuccess) {
+                alert('Success: ' + 
+                    (vitalSaveSuccess ? 'Clinical Vitals saved. ' : '') + 
+                    (userUpdateSuccess ? 'User profile updated.' : ''));
+            } else {
+                throw new Error(errorMessage || 'Both updates failed.');
+            }
+
         } catch (err) {
             console.error(err);
-            alert('Failed to update profile: ' + err.message);
+            alert('Update Error: ' + err.message);
         } finally {
             setIsUpdatingProfile(false);
         }
