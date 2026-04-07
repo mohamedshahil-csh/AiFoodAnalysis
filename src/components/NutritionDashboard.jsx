@@ -482,7 +482,7 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                     {(userName || 'U').charAt(0).toUpperCase()}
                                 </div>
                                 <div className="flex flex-col items-end">
-                                    <button 
+                                    <button
                                         onClick={() => {
                                             setShowProfile(true);
                                             // Smooth scroll to profile
@@ -510,18 +510,18 @@ const NutritionDashboard = ({ user, onLogout }) => {
 
                     {/* Action Bar */}
                     <div className="flex flex-wrap gap-3 mb-8 -mt-12 pb-6 border-b border-[var(--border)]">
-                        <button 
+                        <button
                             onClick={() => setShowMealHistory(true)}
                             className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all">
                             <History className="w-3.5 h-3.5" /> Meal History
                         </button>
-                        <button 
+                        <button
                             onClick={handleExportPDF}
                             disabled={!analysis}
                             className={`flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-emerald-500 hover:text-emerald-500 transition-all ${!analysis ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}>
                             <Download className="w-3.5 h-3.5" /> Export PDF
                         </button>
-                        <button 
+                        <button
                             onClick={handleGenerateMealPlan}
                             className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--primary)]/10 border border-[var(--primary)]/30 rounded-xl text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-all active:scale-95 shadow-lg shadow-[var(--primary)]/5">
                             <UtensilsCrossed className="w-3.5 h-3.5" /> Generate Meal Plan
@@ -675,32 +675,32 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                                     </div>
                                                 </div>
                                                 <div className="grid grid-cols-3 gap-3">
-                                                <div className="space-y-1">
-                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Age</label>
-                                                    <input type="number" placeholder="e.g. 45" value={patientProfile.age} onChange={e => updateProfile('age', e.target.value)}
-                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Gender</label>
-                                                    <select value={patientProfile.gender} onChange={e => updateProfile('gender', e.target.value)}
-                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
-                                                        <option value="">Select</option>
-                                                        <option value="Male">Male</option>
-                                                        <option value="Female">Female</option>
-                                                        <option value="Other">Other</option>
-                                                    </select>
-                                                </div>
-                                                <div className="space-y-1">
-                                                    <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Activity Level</label>
-                                                    <select value={patientProfile.occupation} onChange={e => updateProfile('occupation', e.target.value)}
-                                                        className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
-                                                        <option value="">Select</option>
-                                                        <option value="Sedentary">Sedentary/Desk</option>
-                                                        <option value="Moderate">Moderate Activity</option>
-                                                        <option value="Active">Active/Manual</option>
-                                                        <option value="Athlete">Athlete</option>
-                                                    </select>
-                                                </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Age</label>
+                                                        <input type="number" placeholder="e.g. 45" value={patientProfile.age} onChange={e => updateProfile('age', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Gender</label>
+                                                        <select value={patientProfile.gender} onChange={e => updateProfile('gender', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
+                                                            <option value="">Select</option>
+                                                            <option value="Male">Male</option>
+                                                            <option value="Female">Female</option>
+                                                            <option value="Other">Other</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Activity Level</label>
+                                                        <select value={patientProfile.occupation} onChange={e => updateProfile('occupation', e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors">
+                                                            <option value="">Select</option>
+                                                            <option value="Sedentary">Sedentary/Desk</option>
+                                                            <option value="Moderate">Moderate Activity</option>
+                                                            <option value="Active">Active/Manual</option>
+                                                            <option value="Athlete">Athlete</option>
+                                                        </select>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -1484,9 +1484,9 @@ const NutritionDashboard = ({ user, onLogout }) => {
                     setShowFaceScanner(false);
                 }}
             />
-            <HealthHistoryModal 
-                isOpen={showHealthHistory} 
-                onClose={() => setShowHealthHistory(false)} 
+            <HealthHistoryModal
+                isOpen={showHealthHistory}
+                onClose={() => setShowHealthHistory(false)}
                 userId={authService.getUser()?.id}
                 authService={authService}
             />
