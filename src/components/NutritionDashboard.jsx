@@ -1,10 +1,10 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
     Camera, Upload, ChevronRight, Activity, Heart, ShieldAlert,
     Scale, FileText, CheckCircle, AlertTriangle, ShieldCheck,
     Zap, Thermometer, Droplets, ArrowUpRight, Copy, Loader2,
     Sun, Moon, Clock, Brain, Timer, Activity as GutIcon,
-    History, Download, UtensilsCrossed, Scan
+    History, Download, UtensilsCrossed, Scan, Save, Edit2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { analyzeFoodImage, generateMealPlan } from '../services/aiService';
@@ -13,10 +13,60 @@ import { generateMetabolicInsights } from '../services/metabolicEngine';
 import * as clinical from '../utils/clinicalLogic';
 import { interpretVital, interpretBMI, generateVitalsHealthReport } from '../services/vitalsInterpreter';
 import { ExerciseSection, LifestyleSection, DailyWellnessPlanSection, HydrationSection, MentalWellnessSection } from './WellnessSections';
-import { HealthScoreBadge, HealthierAlternativesSection, DrugInteractionAlerts, MealHistoryPanel, MealPlanModal, saveMealToHistory, exportToPDF } from './AdvancedFeatures';
+import { HealthScoreBadge, HealthierAlternativesSection, DrugInteractionAlerts, MealHistoryPanel, MealPlanModal, exportToPDF, HealthHistoryModal } from './AdvancedFeatures';
 import FaceScanner from './FaceScanner';
+import { authService } from '../services/authService';
 
-const NutritionDashboard = () => {
+const NutritionDashboard = ({ user, onLogout }) => {
+    const [userName, setUserName] = useState(user?.name || '');
+    const [userEmail, setUserEmail] = useState(user?.email || '');
+
+    useEffect(() => {
+        const loadInitialData = async () => {
+            try {
+                // 1. Fetch User Basic Info
+                const userData = await authService.getMe();
+                setUserName(userData.name || userData.email);
+                setUserEmail(userData.email || '');
+
+                // 2. Fetch Latest Vitals Profile
+                const profileData = await authService.getLatestProfile(userData.id);
+
+                if (profileData) {
+                    // Pre-fill from profile API
+                    setPatientProfile(prev => ({
+                        ...prev,
+                        ...profileData,
+                        // Convert numerical values to string if needed for inputs
+                        weight: profileData.weight || userData.weight || '',
+                        height: profileData.height || userData.height || ''
+                    }));
+                } else {
+                    // Fallback to basic user data for weight/height
+                    setPatientProfile(prev => ({
+                        ...prev,
+                        weight: userData.weight || '',
+                        height: userData.height || ''
+                    }));
+                }
+            } catch (error) {
+                console.error("Initialization error:", error);
+                // Last resort fallback to cache
+                const cached = authService.getUser();
+                if (cached) {
+                    setUserName(cached.name || cached.email);
+                    setUserEmail(cached.email || '');
+                    setPatientProfile(prev => ({
+                        ...prev,
+                        weight: cached.weight || '',
+                        height: cached.height || ''
+                    }));
+                }
+            }
+        };
+
+        loadInitialData();
+    }, []);
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
     const [base64Data, setBase64Data] = useState(null);
@@ -46,6 +96,7 @@ const NutritionDashboard = () => {
     const [showMealHistory, setShowMealHistory] = useState(false);
     const [showMealPlan, setShowMealPlan] = useState(false);
     const [mealPlan, setMealPlan] = useState(null);
+    const [showHealthHistory, setShowHealthHistory] = useState(false);
     const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
     const [healthReport, setHealthReport] = useState(null);
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -56,6 +107,39 @@ const NutritionDashboard = () => {
 
     const updateProfile = (field, value) => {
         setPatientProfile(prev => ({ ...prev, [field]: value }));
+    };
+
+    const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+    const handleUpdateProfile = async () => {
+        setIsUpdatingProfile(true);
+        try {
+            const user = authService.getUser();
+            if (!user?.id) throw new Error('User not found');
+
+            // 1. Update Basic Profile (Name, weight/height for redundant storage)
+            await authService.updateProfile({
+                name: userName,
+                email: userEmail,
+                weight: patientProfile.weight,
+                height: patientProfile.height
+            });
+
+            // 2. Save Clinical Vitals to profile history
+            await authService.saveProfile({
+                user_id: user.id,
+                ...patientProfile
+            });
+
+            alert('Profile and Clinical Vitals updated successfully!');
+            // Refresh data
+            const freshUser = await authService.getMe();
+            setUserName(freshUser.name);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to update profile: ' + err.message);
+        } finally {
+            setIsUpdatingProfile(false);
+        }
     };
 
     // MOBILE FIX: Use createImageBitmap (most efficient mobile API) to load
@@ -176,6 +260,7 @@ const NutritionDashboard = () => {
                 throw new Error('No image data available. Please re-select the photo.');
             }
             const findings = await analyzeFoodImage(b64, patientProfile);
+            console.log("RAW AI ANALYSIS RESPONSE:", findings);
 
             if (!findings || !findings.ingredients) {
                 throw new Error("AI failed to identify ingredients. Please try a clearer photo.");
@@ -234,8 +319,31 @@ const NutritionDashboard = () => {
                 }
             });
 
-            // Save to meal history
-            saveMealToHistory(findings);
+            // Auto-save to backend meal history
+            try {
+                const user = authService.getUser();
+                if (user?.id) {
+                    await authService.saveMeal({
+                        user_id: user.id,
+                        dishName: findings.dishName,
+                        overallHealthScore: findings.overallHealthScore,
+                        clinicalSuitability: {
+                            verdict: findings.clinicalSuitability?.verdict,
+                            explanation: findings.clinicalSuitability?.explanation
+                        },
+                        ingredients: mapped.map(ing => ({
+                            name: ing.name,
+                            calories: ing.calories,
+                            protein: ing.protein,
+                            carbs: ing.carbs,
+                            fat: ing.fat
+                        })),
+                        full_json: findings // Store full analysis for deep-dive
+                    });
+                }
+            } catch (saveErr) {
+                console.error("Auto-save failed:", saveErr);
+            }
         } catch (err) {
             console.error(err);
             alert(`Analysis failed: ${err.message}`);
@@ -254,11 +362,19 @@ const NutritionDashboard = () => {
         setShowMealPlan(true);
         setIsGeneratingPlan(true);
         try {
-            const plan = await generateMealPlan(patientProfile, analysis?.findings);
+            // ALWAYS fetch the absolute latest clinical profile for the meal plan
+            const latestProfile = await authService.getLatestProfile(user.id);
+            const plan = await generateMealPlan(latestProfile || patientProfile, analysis?.findings);
             setMealPlan(plan);
         } catch (err) {
-            console.error(err);
-            alert('Failed to generate meal plan: ' + err.message);
+            console.error("Meal plan profile fetch failed, falling back to local state:", err);
+            try {
+                const plan = await generateMealPlan(patientProfile, analysis?.findings);
+                setMealPlan(plan);
+            } catch (fallbackErr) {
+                console.error(fallbackErr);
+                alert('Failed to generate meal plan: ' + fallbackErr.message);
+            }
         } finally {
             setIsGeneratingPlan(false);
         }
@@ -338,10 +454,7 @@ const NutritionDashboard = () => {
                     <header className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-20 border-b border-[var(--border)] pb-12">
                         <div className="space-y-2">
                             <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-3 text-cyan-500 font-black tracking-[0.2em] text-[10px] uppercase">
-                                    <span className="w-2 h-2 rounded-full bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
-                                    Diagnostic Terminal v4.0.2
-                                </div>
+
                                 <button
                                     onClick={toggleTheme}
                                     className="p-2 rounded-full hover:bg-[var(--border)] transition-colors group"
@@ -361,28 +474,59 @@ const NutritionDashboard = () => {
                         <div className="flex items-center gap-6">
                             <div className="text-right">
                                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Metadata Engine</p>
-                                <p className="text-xs font-mono text-zinc-400 mt-1">GPT-4.1 Vision · Precision Mode</p>
+                                <p className="text-xs font-mono text-zinc-400 mt-1">GPT-4o Vision · Precision Mode</p>
+                            </div>
+                            {/* User Profile & Logout */}
+                            <div className="flex items-center gap-3 pl-6 border-l border-[var(--border)]">
+                                <div className="user-avatar-badge cursor-pointer hover:ring-2 hover:ring-[var(--primary)] transition-all" onClick={() => setShowProfile(true)}>
+                                    {(userName || 'U').charAt(0).toUpperCase()}
+                                </div>
+                                <div className="flex flex-col items-end">
+                                    <button 
+                                        onClick={() => {
+                                            setShowProfile(true);
+                                            // Smooth scroll to profile
+                                            const el = document.getElementById('patient-profile-section');
+                                            if (el) el.scrollIntoView({ behavior: 'smooth' });
+                                        }}
+                                        className="flex items-center gap-2 group mb-0.5"
+                                    >
+                                        <p className="text-xs font-bold text-[var(--foreground)] leading-tight group-hover:text-[var(--primary)] transition-colors">
+                                            {userName || 'User'}
+                                        </p>
+                                        <Edit2 className="w-3 h-3 text-[var(--muted)] group-hover:text-[var(--primary)] transition-colors" />
+                                    </button>
+                                    <button
+                                        onClick={onLogout}
+                                        className="text-[9px] font-bold text-rose-400 hover:text-rose-300 uppercase tracking-widest transition-colors"
+                                        id="logout-btn"
+                                    >
+                                        Logout →
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </header>
 
                     {/* Action Bar */}
-                    {analysis && (
-                        <div className="flex flex-wrap gap-3 mb-8 -mt-12 pb-6 border-b border-[var(--border)]">
-                            <button onClick={() => setShowMealHistory(true)}
-                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all">
-                                <History className="w-3.5 h-3.5" /> Meal History
-                            </button>
-                            <button onClick={handleExportPDF}
-                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-emerald-500 hover:text-emerald-500 transition-all">
-                                <Download className="w-3.5 h-3.5" /> Export PDF
-                            </button>
-                            <button onClick={handleGenerateMealPlan}
-                                className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--primary)]/10 border border-[var(--primary)]/30 rounded-xl text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-all">
-                                <UtensilsCrossed className="w-3.5 h-3.5" /> Generate Meal Plan
-                            </button>
-                        </div>
-                    )}
+                    <div className="flex flex-wrap gap-3 mb-8 -mt-12 pb-6 border-b border-[var(--border)]">
+                        <button 
+                            onClick={() => setShowMealHistory(true)}
+                            className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-[var(--primary)] hover:text-[var(--primary)] transition-all">
+                            <History className="w-3.5 h-3.5" /> Meal History
+                        </button>
+                        <button 
+                            onClick={handleExportPDF}
+                            disabled={!analysis}
+                            className={`flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--card)] border border-[var(--border)] rounded-xl hover:border-emerald-500 hover:text-emerald-500 transition-all ${!analysis ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}>
+                            <Download className="w-3.5 h-3.5" /> Export PDF
+                        </button>
+                        <button 
+                            onClick={handleGenerateMealPlan}
+                            className="flex items-center gap-2 px-4 py-2.5 text-[9px] font-black uppercase tracking-widest bg-[var(--primary)]/10 border border-[var(--primary)]/30 rounded-xl text-[var(--primary)] hover:bg-[var(--primary)]/20 transition-all active:scale-95 shadow-lg shadow-[var(--primary)]/5">
+                            <UtensilsCrossed className="w-3.5 h-3.5" /> Generate Meal Plan
+                        </button>
+                    </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
 
@@ -397,6 +541,7 @@ const NutritionDashboard = () => {
                                     accept="image/*"
                                     style={{ display: 'none' }}
                                 />
+
 
                                 {/* Preview Area — shows detected food name */}
                                 <div className="group relative aspect-square rounded-2xl border border-dashed border-[var(--border)] hover:border-[var(--primary)] transition-all duration-300 overflow-hidden bg-[var(--card)]">
@@ -454,6 +599,19 @@ const NutritionDashboard = () => {
                                     </button>
                                 </div>
 
+                                {/* Initialize Diagnostic Button — Moved here for better UX */}
+                                <button
+                                    onClick={runAnalysis}
+                                    disabled={!preview || isAnalyzing}
+                                    className={`w-full py-5 rounded-xl text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 active:scale-[0.98] ${isAnalyzing
+                                        ? 'bg-[var(--border)] text-[var(--muted)] border border-[var(--border)]'
+                                        : 'bg-[var(--foreground)] text-[var(--background)] hover:bg-[var(--primary)] hover:text-white border border-transparent shadow-[0_0_20px_rgba(34,211,238,0.1)]'
+                                        }`}
+                                >
+                                    {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin text-[var(--primary)]" /> : <Activity className="w-4 h-4" />}
+                                    {isAnalyzing ? 'Sequencing...' : 'Initialize Diagnostic'}
+                                </button>
+
                                 {/* Mobile Debug Info */}
                                 {debugMsg && (
                                     <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-[10px] font-mono break-all">
@@ -462,7 +620,7 @@ const NutritionDashboard = () => {
                                 )}
 
                                 {/* Patient Profile Section */}
-                                <div className="border border-[var(--border)] bg-[var(--card)] rounded-2xl overflow-hidden">
+                                <div id="patient-profile-section" className={`border border-[var(--border)] bg-[var(--card)] rounded-2xl overflow-hidden transition-all duration-500 ${showProfile ? 'ring-1 ring-[var(--primary)]/20 shadow-lg' : ''}`}>
                                     <button
                                         onClick={() => setShowProfile(!showProfile)}
                                         className="w-full flex items-center justify-between p-5 hover:bg-[var(--card-hover)] transition-colors"
@@ -475,17 +633,48 @@ const NutritionDashboard = () => {
                                     </button>
                                     {showProfile && (
                                         <div className="px-5 pb-5 space-y-5">
-                                            {/* ── Face Scanner Button ── */}
+                                            <div className="grid grid-cols-2 gap-3 mb-2">
+                                                <button
+                                                    onClick={() => setShowFaceScanner(true)}
+                                                    className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+                                                >
+                                                    <Scan className="w-4 h-4" />
+                                                    🧬 Scan Face
+                                                </button>
+
+                                                <button
+                                                    onClick={() => setShowHealthHistory(true)}
+                                                    className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--card-hover)]"
+                                                >
+                                                    <History className="w-4 h-4" />
+                                                    📈 View History
+                                                </button>
+                                            </div>
+
                                             <button
-                                                onClick={() => setShowFaceScanner(true)}
-                                                className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)] mb-2"
+                                                onClick={handleUpdateProfile}
+                                                disabled={isUpdatingProfile}
+                                                className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 mb-6"
                                             >
-                                                <Scan className="w-4 h-4" />
-                                                🧬 Scan Face — Auto-Fill Vitals
+                                                {isUpdatingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                                💾 Save Profile to Database
                                             </button>
 
                                             {/* ── Demographics ── */}
-                                            <div className="grid grid-cols-3 gap-3">
+                                            <div className="space-y-4">
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Full Name</label>
+                                                        <input type="text" placeholder="Your Name" value={userName} onChange={e => setUserName(e.target.value)}
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--foreground)] focus:border-[var(--primary)] focus:outline-none transition-colors" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Email Address</label>
+                                                        <input type="email" value={userEmail} disabled
+                                                            className="w-full p-2.5 text-xs bg-[var(--background)] border border-[var(--border)] rounded-lg text-[var(--muted)] cursor-not-allowed opacity-70" />
+                                                    </div>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-3">
                                                 <div className="space-y-1">
                                                     <label className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest">Age</label>
                                                     <input type="number" placeholder="e.g. 45" value={patientProfile.age} onChange={e => updateProfile('age', e.target.value)}
@@ -511,6 +700,7 @@ const NutritionDashboard = () => {
                                                         <option value="Active">Active/Manual</option>
                                                         <option value="Athlete">Athlete</option>
                                                     </select>
+                                                </div>
                                                 </div>
                                             </div>
 
@@ -823,17 +1013,6 @@ const NutritionDashboard = () => {
                                     )}
                                 </AnimatePresence>
 
-                                <button
-                                    onClick={runAnalysis}
-                                    disabled={!preview || isAnalyzing}
-                                    className={`w-full py-5 rounded-xl text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 active:scale-[0.98] ${isAnalyzing
-                                        ? 'bg-[var(--border)] text-[var(--muted)] border border-[var(--border)]'
-                                        : 'bg-[var(--foreground)] text-[var(--background)] hover:bg-[var(--primary)] hover:text-white border border-transparent shadow-[0_0_20px_rgba(34,211,238,0.1)]'
-                                        }`}
-                                >
-                                    {isAnalyzing ? <Loader2 className="w-4 h-4 animate-spin text-[var(--primary)]" /> : <Activity className="w-4 h-4" />}
-                                    {isAnalyzing ? 'Sequencing...' : 'Initialize Diagnostic'}
-                                </button>
                             </section>
 
                             {/* High-Risk Interactions */}
@@ -881,41 +1060,43 @@ const NutritionDashboard = () => {
 
                                         {/* Metabolic & Clinical Reports */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                            <DiagnosticCard
-                                                title="Metabolic Profile"
-                                                items={[
-                                                    { label: 'Glycemic Load', value: analysis.clinical.gl, status: analysis.clinical.gl > 20 ? 'High' : analysis.clinical.gl > 10 ? 'Caution' : 'Optimal', type: analysis.clinical.gl > 20 ? 'danger' : analysis.clinical.gl > 10 ? 'warn' : 'success' },
-                                                    { label: 'Purine Content', value: analysis.clinical.purine.status, status: analysis.clinical.purine.status === 'High' ? 'Caution' : 'Optimal', type: analysis.clinical.purine.status === 'High' ? 'warn' : 'success' },
-                                                    { label: 'Inflammation', value: analysis.clinical.inflammation, status: 'Indicator', type: 'info' }
-                                                ]}
-                                            />
-                                            <DiagnosticCard
-                                                title="Geriatric Insights"
-                                                items={analysis.clinical.geriatric.map(insight => ({
-                                                    label: 'Clinical Insight',
-                                                    value: insight,
-                                                    status: insight.includes('🔴') || insight.includes('⚠️') ? 'Action' : 'Info',
-                                                    type: insight.includes('🔴') || insight.includes('⚠️') ? 'danger' : 'info'
-                                                }))}
-                                            />
-                                            <DiagnosticCard
-                                                title="Structural Insights"
-                                                items={[
-                                                    { label: 'Cuisine', value: analysis.findings.cuisine, status: 'Detected', type: 'info' },
-                                                    { label: 'FODMAP Risk', value: analysis.clinical.fodmap.status, status: analysis.clinical.fodmap.status.includes('High') ? 'Caution' : 'Safe', type: analysis.clinical.fodmap.status.includes('High') ? 'warn' : 'success' },
-                                                    { label: 'Renal Sync', value: analysis.clinical.renal.isCompatible ? 'Stable' : 'Conflict', status: analysis.clinical.renal.isCompatible ? 'Approved' : 'Review', type: analysis.clinical.renal.isCompatible ? 'success' : 'danger' },
-                                                    { label: 'Metabolism Eq', value: `${analysis.clinical.weightScore}/10`, status: 'Rating', type: 'info' }
-                                                ]}
-                                            />
+                                            <CollapsibleSection title="Metabolic Profile" icon={Activity}>
+                                                <DiagnosticCard
+                                                    title="Metabolic Profile"
+                                                    items={[
+                                                        { label: 'Glycemic Load', value: analysis.clinical.gl, status: analysis.clinical.gl > 20 ? 'High' : analysis.clinical.gl > 10 ? 'Caution' : 'Optimal', type: analysis.clinical.gl > 20 ? 'danger' : analysis.clinical.gl > 10 ? 'warn' : 'success' },
+                                                        { label: 'Purine Content', value: analysis.clinical.purine.status, status: analysis.clinical.purine.status === 'High' ? 'Caution' : 'Optimal', type: analysis.clinical.purine.status === 'High' ? 'warn' : 'success' },
+                                                        { label: 'Inflammation', value: analysis.clinical.inflammation, status: 'Indicator', type: 'info' }
+                                                    ]}
+                                                />
+                                            </CollapsibleSection>
+                                            <CollapsibleSection title="Geriatric Insights" icon={Heart}>
+                                                <DiagnosticCard
+                                                    title="Geriatric Insights"
+                                                    items={analysis.clinical.geriatric.map(insight => ({
+                                                        label: 'Clinical Insight',
+                                                        value: insight,
+                                                        status: insight.includes('🔴') || insight.includes('⚠️') ? 'Action' : 'Info',
+                                                        type: insight.includes('🔴') || insight.includes('⚠️') ? 'danger' : 'info'
+                                                    }))}
+                                                />
+                                            </CollapsibleSection>
+                                            <CollapsibleSection title="Structural Insights" icon={Scale}>
+                                                <DiagnosticCard
+                                                    title="Structural Insights"
+                                                    items={[
+                                                        { label: 'Cuisine', value: analysis.findings.cuisine, status: 'Detected', type: 'info' },
+                                                        { label: 'FODMAP Risk', value: analysis.clinical.fodmap.status, status: analysis.clinical.fodmap.status.includes('High') ? 'Caution' : 'Safe', type: analysis.clinical.fodmap.status.includes('High') ? 'warn' : 'success' },
+                                                        { label: 'Renal Sync', value: analysis.clinical.renal.isCompatible ? 'Stable' : 'Conflict', status: analysis.clinical.renal.isCompatible ? 'Approved' : 'Review', type: analysis.clinical.renal.isCompatible ? 'success' : 'danger' },
+                                                        { label: 'Metabolism Eq', value: `${analysis.clinical.weightScore}/10`, status: 'Rating', type: 'info' }
+                                                    ]}
+                                                />
+                                            </CollapsibleSection>
                                         </div>
 
                                         {/* Clinical Suitability Verdict */}
                                         {analysis.findings.clinicalSuitability && (
-                                            <section className="space-y-4">
-                                                <div className="flex items-center gap-3 border-b border-[var(--border)] pb-4">
-                                                    <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
-                                                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Clinical Suitability</h3>
-                                                </div>
+                                            <CollapsibleSection title="Clinical Suitability" icon={ShieldCheck} defaultOpen={true}>
                                                 <div className={`p-6 rounded-2xl border-2 ${analysis.findings.clinicalSuitability.verdict === 'Safe' ? 'border-emerald-500/30 bg-emerald-500/5' :
                                                     analysis.findings.clinicalSuitability.verdict === 'Avoid' ? 'border-rose-500/30 bg-rose-500/5' :
                                                         'border-amber-500/30 bg-amber-500/5'
@@ -928,7 +1109,7 @@ const NutritionDashboard = () => {
                                                     </div>
                                                     <p className="text-xs text-[var(--foreground)] leading-relaxed font-medium mb-4">{analysis.findings.clinicalSuitability.explanation}</p>
                                                     {analysis.findings.clinicalSuitability.markers && (
-                                                        <div className="grid grid-cols-2 gap-3">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                             {analysis.findings.clinicalSuitability.markers.map((m, i) => (
                                                                 <div key={i} className="p-3 rounded-lg bg-[var(--background)] border border-[var(--border)]">
                                                                     <div className="flex items-center justify-between mb-1">
@@ -944,136 +1125,96 @@ const NutritionDashboard = () => {
                                                         </div>
                                                     )}
                                                 </div>
-                                            </section>
+                                            </CollapsibleSection>
                                         )}
 
-                                        {/* Metabolic Control Center: AI Spike Prediction */}
-                                        <section className="space-y-8">
-                                            <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
-                                                <div className="space-y-1">
-                                                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Metabolic Control Center</h3>
-                                                    <div className="flex items-center gap-2">
-                                                        <Clock className="w-3 h-3 text-[var(--primary)]" />
-                                                        <p className="text-[10px] font-bold text-[var(--foreground)] uppercase tracking-tight">
-                                                            Analyzed: {analysis.clinical.metabolic.spike.mealTime}
-                                                            <span className="mx-2 opacity-30">|</span>
-                                                            {analysis.clinical.metabolic.spike.mealCategory}
-                                                        </p>
+                                        {/* Metabolic Control Center */}
+                                        <CollapsibleSection title="Metabolic Control Center" icon={Clock}>
+                                            <div className="space-y-8">
+                                                <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <Clock className="w-3 h-3 text-[var(--primary)]" />
+                                                            <p className="text-[10px] font-bold text-[var(--foreground)] uppercase tracking-tight">
+                                                                Analyzed: {analysis.clinical.metabolic.spike.mealTime}
+                                                                <span className="mx-2 opacity-30">|</span>
+                                                                {analysis.clinical.metabolic.spike.mealCategory}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`text-[10px] font-mono px-3 py-1 border ${analysis.clinical.metabolic.risk.color === 'danger' ? 'text-rose-500 bg-rose-500/5 border-rose-500/20' :
+                                                        analysis.clinical.metabolic.risk.color === 'warn' ? 'text-amber-500 bg-amber-500/5 border-amber-500/20' :
+                                                            'text-emerald-500 bg-emerald-500/5 border-emerald-500/20'
+                                                        }`}>
+                                                        GLYCEMIC RISK: {analysis.clinical.metabolic.risk.riskLevel.toUpperCase()}
                                                     </div>
                                                 </div>
-                                                <div className={`text-[10px] font-mono px-3 py-1 border ${analysis.clinical.metabolic.risk.color === 'danger' ? 'text-rose-500 bg-rose-500/5 border-rose-500/20' :
-                                                    analysis.clinical.metabolic.risk.color === 'warn' ? 'text-amber-500 bg-amber-500/5 border-amber-500/20' :
-                                                        'text-emerald-500 bg-emerald-500/5 border-emerald-500/20'
+
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                                    {/* Spike Prediction Visual */}
+                                                    <div className="md:col-span-2 p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl space-y-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="space-y-1">
+                                                                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--muted)]">Predicted Glucose Excursion</p>
+                                                                <p className="text-2xl font-black text-[var(--foreground)]">+{analysis.clinical.metabolic.spike.peakMgdl} <span className="text-xs uppercase opacity-50">mg/dL</span></p>
+                                                            </div>
+                                                            <Activity className={`w-8 h-8 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'text-rose-500' : 'text-[var(--primary)]'}`} />
+                                                        </div>
+
+                                                        <div className="h-20 flex items-end gap-0.5">
+                                                            {analysis.clinical.metabolic.spike.predictedCurve.map((p, i) => (
+                                                                <div
+                                                                    key={i}
+                                                                    className={`flex-1 rounded-t-sm transition-all duration-1000 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'bg-rose-500' : 'bg-[var(--primary)]'}`}
+                                                                    style={{ height: `${(p.mgdl / (analysis.clinical.metabolic.spike.peakMgdl || 1)) * 100}%` }}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                        <div className="flex justify-between text-[8px] font-bold text-[var(--muted)] uppercase tracking-widest pt-2 border-t border-[var(--border)]">
+                                                            <span>0m</span>
+                                                            <span>60m (Peak)</span>
+                                                            <span>120m</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-4">
+                                                        <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl relative overflow-hidden">
+                                                            <div className={`absolute top-0 right-0 w-1 h-full bg-${analysis.clinical.metabolic.consumptionAdvice.color}-500`} />
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest">Dietary Guidance</p>
+                                                                <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter bg-${analysis.clinical.metabolic.consumptionAdvice.color}-500/10 text-${analysis.clinical.metabolic.consumptionAdvice.color}-500`}>
+                                                                    {analysis.clinical.metabolic.consumptionAdvice.rating}
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-xl font-black text-[var(--foreground)] mb-1">{analysis.clinical.metabolic.consumptionAdvice.frequency}</p>
+                                                            <p className="text-[10px] text-[var(--muted)] leading-relaxed">
+                                                                {analysis.clinical.metabolic.consumptionAdvice.advice}
+                                                            </p>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="p-4 border border-[var(--border)] bg-[var(--card)] rounded-xl">
+                                                                <p className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Total Carbs</p>
+                                                                <p className="text-xl font-black text-[var(--foreground)]">{analysis.clinical.metabolic.totalCarbs}<span className="text-[10px] ml-1 opacity-40">g</span></p>
+                                                            </div>
+                                                            <div className="p-4 border border-[var(--border)] bg-[var(--card)] rounded-xl">
+                                                                <p className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">C : P Ratio</p>
+                                                                <p className="text-xl font-black text-[var(--foreground)]">{analysis.clinical.metabolic.features.carbToProtein}<span className="text-[10px] ml-1 opacity-40">(:1)</span></p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className={`p-4 border rounded-xl text-xs font-medium flex items-start gap-3 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'bg-rose-500/10 border-rose-500/20 text-rose-200' :
+                                                    analysis.clinical.metabolic.risk.color === 'warn' ? 'bg-amber-500/10 border-amber-500/20 text-amber-200' :
+                                                        'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
                                                     }`}>
-                                                    GLYCEMIC RISK: {analysis.clinical.metabolic.risk.riskLevel.toUpperCase()}
+                                                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                                                    {analysis.clinical.metabolic.risk.message}
                                                 </div>
                                             </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                                {/* Spike Prediction Visual */}
-                                                <div className="md:col-span-2 p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="space-y-1">
-                                                            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--muted)]">Predicted Glucose Excursion</p>
-                                                            <p className="text-2xl font-black text-[var(--foreground)]">+{analysis.clinical.metabolic.spike.peakMgdl} <span className="text-xs uppercase opacity-50">mg/dL</span></p>
-                                                        </div>
-                                                        <Activity className={`w-8 h-8 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'text-rose-500' : 'text-[var(--primary)]'}`} />
-                                                    </div>
-
-                                                    {/* Simple ASCII/Sparkline representation of the curve */}
-                                                    <div className="h-20 flex items-end gap-0.5">
-                                                        {analysis.clinical.metabolic.spike.predictedCurve.map((p, i) => (
-                                                            <div
-                                                                key={i}
-                                                                className={`flex-1 rounded-t-sm transition-all duration-1000 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'bg-rose-500' : 'bg-[var(--primary)]'}`}
-                                                                style={{ height: `${(p.mgdl / (analysis.clinical.metabolic.spike.peakMgdl || 1)) * 100}%` }}
-                                                            />
-                                                        ))}
-                                                    </div>
-                                                    <div className="flex justify-between text-[8px] font-bold text-[var(--muted)] uppercase tracking-widest pt-2 border-t border-[var(--border)]">
-                                                        <span>0m</span>
-                                                        <span>60m (Peak)</span>
-                                                        <span>120m</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Clinical Markers */}
-                                                <div className="space-y-4">
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl relative overflow-hidden">
-                                                        <div className={`absolute top-0 right-0 w-1 h-full bg-${analysis.clinical.metabolic.consumptionAdvice.color}-500`} />
-                                                        <div className="flex justify-between items-start mb-2">
-                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest">Dietary Guidance</p>
-                                                            <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter bg-${analysis.clinical.metabolic.consumptionAdvice.color}-500/10 text-${analysis.clinical.metabolic.consumptionAdvice.color}-500`}>
-                                                                {analysis.clinical.metabolic.consumptionAdvice.rating}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xl font-black text-[var(--foreground)] mb-1">{analysis.clinical.metabolic.consumptionAdvice.frequency}</p>
-                                                        <p className="text-[10px] text-[var(--muted)] leading-relaxed">
-                                                            {analysis.clinical.metabolic.consumptionAdvice.advice}
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        <div className="p-4 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                            <p className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Total Carbs</p>
-                                                            <p className="text-xl font-black text-[var(--foreground)]">{analysis.clinical.metabolic.totalCarbs}<span className="text-[10px] ml-1 opacity-40">g</span></p>
-                                                        </div>
-                                                        <div className="p-4 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                            <p className="text-[8px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Carb : Protein</p>
-                                                            <p className="text-xl font-black text-[var(--foreground)]">{analysis.clinical.metabolic.features.carbToProtein}<span className="text-[10px] ml-1 opacity-40">(:1)</span></p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                        <div className="flex justify-between items-start mb-1">
-                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest">Optimal Consumption Window</p>
-                                                            <span className="text-[8px] px-1.5 py-0.5 bg-[var(--primary)]/10 text-[var(--primary)] rounded-full font-black uppercase tracking-tighter">Clinical Recommendation</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <CheckCircle className="w-3 h-3 text-emerald-500" />
-                                                            <p className="text-sm font-black text-[var(--foreground)]">{analysis.clinical.metabolic.optimalWindow.perfectTime}</p>
-                                                        </div>
-                                                        <p className="text-[10px] text-[var(--muted)] mt-2 leading-relaxed italic border-l-2 border-[var(--border)] pl-3">
-                                                            {analysis.clinical.metabolic.optimalWindow.reason}
-                                                        </p>
-                                                    </div>
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Meal Timing Impact</p>
-                                                        <div className="flex items-center gap-2">
-                                                            <Sun className="w-3 h-3 text-amber-500" />
-                                                            <p className="text-sm font-bold text-[var(--foreground)]">{analysis.clinical.metabolic.spike.timingImpact}</p>
-                                                        </div>
-                                                        <p className="text-[9px] text-[var(--muted)] mt-1 opacity-60 font-medium">Effect based on current analysis time (4:35 PM)</p>
-                                                    </div>
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">CGM Correlation</p>
-                                                        <p className="text-sm font-bold text-[var(--foreground)]">{analysis.clinical.metabolic.correlation.pattern}</p>
-                                                        <p className="text-[10px] text-[var(--muted)] mt-1 italic">{analysis.clinical.metabolic.correlation.correlationSource}</p>
-                                                    </div>
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-xl">
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Carb : Fiber Ratio</p>
-                                                        <p className="text-lg font-black text-[var(--foreground)]">{analysis.clinical.metabolic.features.carbToFiber} <span className="text-[10px] opacity-40">(:1)</span></p>
-                                                        <div className="w-full h-1 bg-[var(--border)] mt-2 rounded-full overflow-hidden">
-                                                            <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, (1 / (parseFloat(analysis.clinical.metabolic.features.carbToFiber) || 1)) * 100)}%` }} />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className={`p-4 border rounded-xl text-xs font-medium flex items-start gap-3 ${analysis.clinical.metabolic.risk.color === 'danger' ? 'bg-rose-500/10 border-rose-500/20 text-rose-200' :
-                                                analysis.clinical.metabolic.risk.color === 'warn' ? 'bg-amber-500/10 border-amber-500/20 text-amber-200' :
-                                                    'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
-                                                }`}>
-                                                <AlertTriangle className="w-4 h-4 shrink-0" />
-                                                {analysis.clinical.metabolic.risk.message}
-                                            </div>
-                                        </section>
+                                        </CollapsibleSection>
 
                                         {/* Micronutrient Intelligence */}
-                                        <section className="space-y-8">
-                                            <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Micronutrient Intelligence</h3>
-                                                <div className="text-[10px] font-mono text-[var(--primary)] bg-[var(--primary)]/5 px-3 py-1 border border-[var(--primary)]/20">BIO-MARKER SYNC: ACTIVE</div>
-                                            </div>
+                                        <CollapsibleSection title="Micronutrient Intelligence" icon={Droplets}>
                                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                                 <MicroTile label="Calcium" value={analysis.totals.calcium} unit="mg" />
                                                 <MicroTile label="Iron" value={analysis.totals.iron} unit="mg" />
@@ -1084,15 +1225,10 @@ const NutritionDashboard = () => {
                                                 <MicroTile label="Vit D" value={analysis.totals.vitD} unit="mcg" />
                                                 <MicroTile label="Phosphorus" value={analysis.totals.phosphorus} unit="mg" />
                                             </div>
-                                        </section>
+                                        </CollapsibleSection>
 
-                                        {/* Total Health Intelligence: Advanced Bio-Markers */}
-                                        <section className="space-y-8">
-                                            <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Total Health Intelligence</h3>
-                                                <ShieldCheck className="w-4 h-4 text-[var(--primary)]" />
-                                            </div>
-
+                                        {/* Total Health Intelligence */}
+                                        <CollapsibleSection title="Total Health Intelligence" icon={ShieldCheck}>
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                                                 {/* NOVA Processing Card */}
                                                 <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl space-y-4">
@@ -1141,133 +1277,114 @@ const NutritionDashboard = () => {
                                                     </div>
                                                 </div>
                                             </div>
-                                        </section>
+                                        </CollapsibleSection>
 
-                                        {/* Total Wellness & Performance: Advanced AI Insights */}
+                                        {/* Total Wellness & Performance */}
                                         {analysis.clinical.wellness && (
-                                            <section className="space-y-8 mb-12">
-                                                <div className="flex items-center justify-between border-b border-[var(--border)] pb-6">
-                                                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-[var(--muted)]">Total Wellness & Performance</h3>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="relative flex h-2 w-2">
-                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--primary)] opacity-75"></span>
-                                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[var(--primary)]"></span>
-                                                        </span>
-                                                        <span className="text-[9px] font-mono text-[var(--primary)] font-black uppercase tracking-widest">Live Bio-AI Sync</span>
+                                            <CollapsibleSection title="Total Wellness & Performance" icon={Zap}>
+                                                <div className="space-y-8">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                                        {/* Gut Health Card */}
+                                                        <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
+                                                            <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                                <GutIcon className="w-16 h-16" />
+                                                            </div>
+                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Gut Health Index</p>
+                                                            <div className="flex items-baseline gap-2 mb-4">
+                                                                <p className="text-3xl font-black text-[var(--foreground)]">{analysis.clinical.wellness.gutHealthIndex}</p>
+                                                                <p className="text-[10px] font-bold text-[var(--muted)]">/ 100</p>
+                                                            </div>
+                                                            <div className="w-full h-1 bg-[var(--border)] rounded-full overflow-hidden">
+                                                                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${analysis.clinical.wellness.gutHealthIndex}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-[var(--muted)] mt-4 leading-relaxed font-black uppercase tracking-tighter opacity-60">Microbiome & Prebiotic</p>
+                                                        </div>
+
+                                                        {/* Satiety Card */}
+                                                        <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
+                                                            <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                                <Timer className="w-16 h-16" />
+                                                            </div>
+                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Satiety Duration</p>
+                                                            <p className="text-2xl font-black text-[var(--foreground)] mb-1">{analysis.clinical.wellness.satietyHours}</p>
+                                                            <p className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest italic opacity-70">Saturation: {analysis.clinical.wellness.satietyScore}/10</p>
+                                                        </div>
+
+                                                        {/* Sleep Card */}
+                                                        <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
+                                                            <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                                <Moon className="w-16 h-16" />
+                                                            </div>
+                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Sleep Resilience</p>
+                                                            <p className="text-lg font-black text-[var(--foreground)] mb-1">{analysis.clinical.wellness.sleepImpact}</p>
+                                                            <div className="flex items-center gap-1.5 mt-4">
+                                                                <div className={`w-1.5 h-1.5 rounded-full ${analysis.clinical.wellness.sleepImpact.toLowerCase().includes('support') ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`} />
+                                                                <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-tighter">Circadian Alignment</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Brain Health Card */}
+                                                        <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
+                                                            <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                                                                <Brain className="w-16 h-16" />
+                                                            </div>
+                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Cognitive & Focus</p>
+                                                            <div className="flex items-baseline gap-2 mb-4">
+                                                                <p className="text-3xl font-black text-[var(--foreground)]">{analysis.clinical.wellness.brainHealthIndex}</p>
+                                                                <p className="text-[10px] font-bold text-[var(--muted)]">/ 100</p>
+                                                            </div>
+                                                            <div className="w-full h-1 bg-[var(--border)] rounded-full overflow-hidden">
+                                                                <div className="h-full bg-[var(--primary)] transition-all duration-1000" style={{ width: `${analysis.clinical.wellness.brainHealthIndex}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-[var(--muted)] mt-4 leading-relaxed font-black uppercase tracking-tighter opacity-60">Neuro-Nutritional Sync</p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="p-5 bg-[var(--primary)]/5 border border-[var(--primary)]/10 rounded-2xl">
+                                                        <div className="flex gap-4 items-center">
+                                                            <div className="p-2 bg-[var(--primary)]/10 rounded-lg">
+                                                                <Zap className="w-4 h-4 text-[var(--primary)]" />
+                                                            </div>
+                                                            <p className="text-[11px] font-bold text-[var(--foreground)] leading-relaxed italic opacity-80">
+                                                                "{analysis.clinical.wellness.wellnessSummary}"
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 </div>
-
-                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                                    {/* Gut Health Card */}
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
-                                                        <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                            <GutIcon className="w-16 h-16" />
-                                                        </div>
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Gut Health Index</p>
-                                                        <div className="flex items-baseline gap-2 mb-4">
-                                                            <p className="text-3xl font-black text-[var(--foreground)]">{analysis.clinical.wellness.gutHealthIndex}</p>
-                                                            <p className="text-[10px] font-bold text-[var(--muted)]">/ 100</p>
-                                                        </div>
-                                                        <div className="w-full h-1 bg-[var(--border)] rounded-full overflow-hidden">
-                                                            <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${analysis.clinical.wellness.gutHealthIndex}%` }} />
-                                                        </div>
-                                                        <p className="text-[9px] text-[var(--muted)] mt-4 leading-relaxed font-black uppercase tracking-tighter opacity-60">Microbiome & Prebiotic</p>
-                                                    </div>
-
-                                                    {/* Satiety Card */}
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
-                                                        <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                            <Timer className="w-16 h-16" />
-                                                        </div>
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Satiety Duration</p>
-                                                        <p className="text-2xl font-black text-[var(--foreground)] mb-1">{analysis.clinical.wellness.satietyHours}</p>
-                                                        <p className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-widest italic opacity-70">Saturation: {analysis.clinical.wellness.satietyScore}/10</p>
-                                                        <p className="text-[9px] text-[var(--muted)] mt-4 leading-relaxed font-medium italic border-l border-[var(--border)] pl-2">Predicted energy availability.</p>
-                                                    </div>
-
-                                                    {/* Sleep Card */}
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
-                                                        <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                            <Moon className="w-16 h-16" />
-                                                        </div>
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Sleep Resilience</p>
-                                                        <p className="text-lg font-black text-[var(--foreground)] mb-1">{analysis.clinical.wellness.sleepImpact}</p>
-                                                        <div className="flex items-center gap-1.5 mt-4">
-                                                            <div className={`w-1.5 h-1.5 rounded-full ${analysis.clinical.wellness.sleepImpact.toLowerCase().includes('support') ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-amber-500'}`} />
-                                                            <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-tighter">Circadian Alignment</p>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Brain Health Card */}
-                                                    <div className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl relative overflow-hidden group hover:border-[var(--primary)]/50 transition-all duration-500">
-                                                        <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
-                                                            <Brain className="w-16 h-16" />
-                                                        </div>
-                                                        <p className="text-[9px] font-black text-[var(--muted)] uppercase tracking-widest mb-2">Cognitive & Focus</p>
-                                                        <div className="flex items-baseline gap-2 mb-4">
-                                                            <p className="text-3xl font-black text-[var(--foreground)]">{analysis.clinical.wellness.brainHealthIndex}</p>
-                                                            <p className="text-[10px] font-bold text-[var(--muted)]">/ 100</p>
-                                                        </div>
-                                                        <div className="w-full h-1 bg-[var(--border)] rounded-full overflow-hidden">
-                                                            <div className="h-full bg-[var(--primary)] transition-all duration-1000" style={{ width: `${analysis.clinical.wellness.brainHealthIndex}%` }} />
-                                                        </div>
-                                                        <p className="text-[9px] text-[var(--muted)] mt-4 leading-relaxed font-black uppercase tracking-tighter opacity-60">Neuro-Nutritional Sync</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="p-5 bg-[var(--primary)]/5 border border-[var(--primary)]/10 rounded-2xl">
-                                                    <div className="flex gap-4 items-center">
-                                                        <div className="p-2 bg-[var(--primary)]/10 rounded-lg">
-                                                            <Zap className="w-4 h-4 text-[var(--primary)]" />
-                                                        </div>
-                                                        <p className="text-[11px] font-bold text-[var(--foreground)] leading-relaxed italic opacity-80">
-                                                            "{analysis.clinical.wellness.wellnessSummary}"
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </section>
+                                            </CollapsibleSection>
                                         )}
 
                                         {/* ═══ NEW WELLNESS SECTIONS ═══ */}
-                                        <div className="wellness-divider" />
+                                        <CollapsibleSection title="Exercise & Activity Rx" icon={Activity}>
+                                            <ExerciseSection exercisePlan={analysis.findings.exercisePlan} />
+                                        </CollapsibleSection>
 
-                                        {/* Exercise & Activity Rx */}
-                                        <ExerciseSection exercisePlan={analysis.findings.exercisePlan} />
+                                        <CollapsibleSection title="Lifestyle Changes" icon={Sun}>
+                                            <LifestyleSection lifestyleChanges={analysis.findings.lifestyleChanges} />
+                                        </CollapsibleSection>
 
-                                        <div className="wellness-divider" />
+                                        <CollapsibleSection title="Daily Wellness Plan" icon={Clock}>
+                                            <DailyWellnessPlanSection dailyWellnessPlan={analysis.findings.dailyWellnessPlan} />
+                                        </CollapsibleSection>
 
-                                        {/* Lifestyle Changes */}
-                                        <LifestyleSection lifestyleChanges={analysis.findings.lifestyleChanges} />
+                                        <CollapsibleSection title="Hydration & Recovery" icon={Droplets}>
+                                            <HydrationSection hydrationRecovery={analysis.findings.hydrationRecovery} />
+                                        </CollapsibleSection>
 
-                                        <div className="wellness-divider" />
+                                        <CollapsibleSection title="Mental Wellness" icon={Brain}>
+                                            <MentalWellnessSection mentalWellness={analysis.findings.mentalWellness} />
+                                        </CollapsibleSection>
 
-                                        {/* Daily Wellness Plan */}
-                                        <DailyWellnessPlanSection dailyWellnessPlan={analysis.findings.dailyWellnessPlan} />
-
-                                        <div className="wellness-divider" />
-
-                                        {/* Hydration & Recovery */}
-                                        <HydrationSection hydrationRecovery={analysis.findings.hydrationRecovery} />
-
-                                        <div className="wellness-divider" />
-
-                                        {/* Mental Wellness & Mind-Body Connection */}
-                                        <MentalWellnessSection mentalWellness={analysis.findings.mentalWellness} />
-
-                                        <div className="wellness-divider" />
 
                                         {/* === ADVANCED FEATURES === */}
                                         <HealthScoreBadge score={analysis.findings.overallHealthScore} />
 
-                                        <div className="wellness-divider" />
 
                                         <HealthierAlternativesSection alternatives={analysis.findings.healthierAlternatives} />
 
-                                        <div className="wellness-divider" />
 
                                         <DrugInteractionAlerts interactions={analysis.findings.drugFoodInteractions} />
 
-                                        <div className="wellness-divider" />
 
                                         {/* Composition Analysis */}
                                         <section className="space-y-8">
@@ -1352,7 +1469,12 @@ const NutritionDashboard = () => {
             </div>
 
             {/* Modals */}
-            <MealHistoryPanel isOpen={showMealHistory} onClose={() => setShowMealHistory(false)} />
+            <MealHistoryPanel
+                isOpen={showMealHistory}
+                onClose={() => setShowMealHistory(false)}
+                userId={authService.getUser()?.id}
+                authService={authService}
+            />
             <MealPlanModal isOpen={showMealPlan} onClose={() => setShowMealPlan(false)} mealPlan={mealPlan} isLoading={isGeneratingPlan} />
             <FaceScanner
                 isOpen={showFaceScanner}
@@ -1361,6 +1483,12 @@ const NutritionDashboard = () => {
                     setPatientProfile(prev => ({ ...prev, ...vitals }));
                     setShowFaceScanner(false);
                 }}
+            />
+            <HealthHistoryModal 
+                isOpen={showHealthHistory} 
+                onClose={() => setShowHealthHistory(false)} 
+                userId={authService.getUser()?.id}
+                authService={authService}
             />
         </div>
     );
@@ -1425,5 +1553,46 @@ const IngredientMetric = ({ label, value, unit }) => (
         <span className="text-[10px] font-mono font-bold text-[var(--foreground)]">{value}{unit}</span>
     </div>
 );
+
+const CollapsibleSection = ({ title, children, icon: Icon, defaultOpen = false }) => {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    return (
+        <div className="border border-[var(--border)] bg-[var(--card)] rounded-2xl overflow-hidden mb-6">
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center justify-between p-5 hover:bg-[var(--card-hover)] transition-colors group"
+            >
+                <div className="flex items-center gap-3">
+                    {Icon && <Icon className="w-4 h-4 text-[var(--primary)] group-hover:scale-110 transition-transform" />}
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--muted)] group-hover:text-[var(--primary)] transition-colors">
+                        {title}
+                    </span>
+                </div>
+                <ChevronRight className={`w-4 h-4 text-[var(--muted)] transition-transform duration-300 ${isOpen ? 'rotate-90 text-[var(--primary)]' : ''}`} />
+            </button>
+            <AnimatePresence>
+                {isOpen && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        className="overflow-hidden"
+                    >
+                        <div className="px-5 pb-6">
+                            <motion.div
+                                initial={{ y: 5, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                transition={{ delay: 0.1 }}
+                            >
+                                {children}
+                            </motion.div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+};
 
 export default NutritionDashboard;

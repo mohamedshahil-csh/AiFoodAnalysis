@@ -11,16 +11,21 @@ export default defineConfig(({ mode }) => {
       basicSsl()
     ],
     server: {
+      https: true,
       host: '0.0.0.0',
       port: 5173,
-      https: true,
       proxy: {
         '/face-api': {
-          target: env.VITE_FACE_VITAL_API_URL || 'https://services-api.a2zhealth.in/v1/face-vital',
+          target: 'http://192.168.100.104:8114/',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/face-api/, '')
+        },
+        '/api': {
+          target: 'http://localhost:5000',
+          changeOrigin: true
         }
       }
     }
   };
 })
+

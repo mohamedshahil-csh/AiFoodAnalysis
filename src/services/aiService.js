@@ -484,70 +484,83 @@ CRITICAL RULES:
 };
 
 /**
- * Generate a personalized full-day meal plan based on the patient's clinical profile.
+ * Generate a personalized 7-day meal plan based on the patient's comprehensive clinical profile.
  */
 export const generateMealPlan = async (patientProfile = {}, lastAnalysis = null) => {
+    const buildPatientVitalsContext = (p) => {
+        let ctx = '';
+        if (p.age) ctx += ` Age ${p.age},`;
+        if (p.gender) ctx += ` ${p.gender},`;
+        if (p.weight) ctx += ` ${p.weight}kg,`;
+        if (p.height) ctx += ` ${p.height}cm,`;
+        if (p.occupation) ctx += ` ${p.occupation} activity level,`;
+        if (p.hba1c) ctx += ` HbA1c ${p.hba1c}% (${parseFloat(p.hba1c) > 5.7 ? 'ELEVATED - prioritize glycemic control' : 'Stable'}),`;
+        if (p.ldl) ctx += ` LDL ${p.ldl}mg/dL (${parseInt(p.ldl) > 130 ? 'HIGH - restrict saturated fats' : 'Optimal'}),`;
+        if (p.bpSystolic) ctx += ` BP ${p.bpSystolic}/${p.bpDiastolic}mmHg (${parseInt(p.bpSystolic) > 130 ? 'ELEVATED - restrict sodium' : 'Normal'}),`;
+        if (p.egfr) ctx += ` eGFR ${p.egfr}mL/min (${parseInt(p.egfr) < 60 ? 'REDUCED - moderate protein' : 'Normal'}),`;
+        if (p.conditions) ctx += ` Medical Conditions: ${p.conditions},`;
+        if (p.medications) ctx += ` Current Medications: ${p.medications},`;
+        if (p.allergies) ctx += ` Allergies: ${p.allergies},`;
+        return ctx;
+    };
+
     if (!OPENAI_API_KEY || OPENAI_API_KEY.includes("your_api_key")) {
         return new Promise((resolve) => {
             setTimeout(() => {
-                resolve({
-                    dailyCalorieTarget: 1800,
+                const demoDays = Array.from({ length: 7 }, (_, i) => ({
+                    day: i + 1,
+                    dailyCalorieTarget: 1800 + (Math.random() * 200 - 100),
                     macroSplit: { protein: "25%", carbs: "45%", fat: "30%" },
+                    clinicalFocus: i % 2 === 0 ? "Glycemic Stabilization" : "Cardiac Support",
                     meals: [
-                        {
-                            meal: "Breakfast",
-                            time: "7:00 - 8:00 AM",
-                            items: ["Oats porridge with almonds & berries", "1 boiled egg", "Green tea"],
-                            calories: 380,
-                            notes: "High fiber start to stabilize morning blood sugar"
-                        },
-                        {
-                            meal: "Mid-Morning Snack",
-                            time: "10:30 AM",
-                            items: ["Apple slices with 1 tbsp peanut butter"],
-                            calories: 180,
-                            notes: "Fiber + healthy fats to prevent pre-lunch glucose dip"
-                        },
-                        {
-                            meal: "Lunch",
-                            time: "12:30 - 1:30 PM",
-                            items: ["Grilled chicken salad with quinoa", "Mixed vegetables", "Buttermilk"],
-                            calories: 520,
-                            notes: "Protein-rich with low glycemic carbs for sustained energy"
-                        },
-                        {
-                            meal: "Evening Snack",
-                            time: "4:00 PM",
-                            items: ["Handful of mixed nuts", "1 small banana"],
-                            calories: 200,
-                            notes: "Potassium-rich to offset sodium from lunch"
-                        },
-                        {
-                            meal: "Dinner",
-                            time: "7:00 - 8:00 PM",
-                            items: ["Dal with brown rice", "Sautéed spinach", "Cucumber raita"],
-                            calories: 480,
-                            notes: "Light dinner with plant protein for overnight recovery"
-                        }
-                    ],
-                    hydrationPlan: "8-10 glasses of water spread throughout the day",
-                    specialNotes: "This plan is optimized for moderate glycemic control with emphasis on fiber and lean protein."
+                        { meal: "Breakfast", time: "7:00 - 8:00 AM", items: ["Oats porridge with berries"], calories: 380, notes: "Low GI start" },
+                        { meal: "Lunch", time: "12:30 - 1:30 PM", items: ["Grilled chicken salad", "Quinoa"], calories: 520, notes: "Protein rich" },
+                        { meal: "Evening Snack", time: "4:00 PM", items: ["Mixed nuts", "Apple"], calories: 200, notes: "Healthy fats" },
+                        { meal: "Dinner", time: "7:00 - 8:00 PM", items: ["Baked fish", "Sautéed spinach"], calories: 480, notes: "Light recovery meal" }
+                    ]
+                }));
+                resolve({ 
+                    weeklyPlan: demoDays, 
+                    weeklySummary: "Balanced 7-day metabolic support routine.",
+                    hydrationTarget: "8-10 glasses of water daily"
                 });
             }, 1500);
         });
     }
 
-    let context = 'Generate a personalized full-day meal plan for:';
-    if (patientProfile.age) context += ` Age ${patientProfile.age},`;
-    if (patientProfile.gender) context += ` ${patientProfile.gender},`;
-    if (patientProfile.weight) context += ` ${patientProfile.weight}kg,`;
-    if (patientProfile.height) context += ` ${patientProfile.height}cm,`;
-    if (patientProfile.occupation) context += ` ${patientProfile.occupation} activity level,`;
-    if (patientProfile.conditions) context += ` Conditions: ${patientProfile.conditions},`;
-    if (patientProfile.medications) context += ` Medications: ${patientProfile.medications},`;
-    if (patientProfile.allergies) context += ` Allergies: ${patientProfile.allergies},`;
-    if (patientProfile.hba1c) context += ` HbA1c: ${patientProfile.hba1c}%,`;
-    if (lastAnalysis?.dishName) context += ` Last food analyzed: ${lastAnalysis.dishName},`;
+    const clinicalContext = buildPatientVitalsContext(patientProfile);
+    const lastAnalysisNote = lastAnalysis?.dishName ? ` Last food analyzed: ${lastAnalysis.dishName}.` : '';
+
+const userContent = `Generate a 7-day personalized clinical meal plan for: ${clinicalContext}${lastAnalysisNote}
+        
+        CRITICAL: For every meal, include:
+        1. "items": List of specific foods.
+        2. "clinicalReason": A hyper-personalized 1-2 sentence explanation. You MUST reference their ACTUAL high lab values if relevant. (e.g., "Since your HbA1c is high at 6.5%, this fiber-rich oatmeal is essential to slow glucose absorption and help bring that number down").
+        3. "biomarkerTargets": Array of markers this meal improves (e.g., ["HbA1c", "LDL", "BP"]).
+
+        Return JSON: { 
+            "weeklyPlan": [{ 
+                "day": <1-7>, 
+                "dailyCalorieTarget": 1800, 
+                "macroSplit": { "protein": "25%", "carbs": "45%", "fat": "30%" }, 
+                "clinicalFocus": "Focus for this day",
+                "meals": [{ "meal": "name", "time": "time", "items": [], "calories": 400, "clinicalReason": "string", "biomarkerTargets": [] }]
+            }], 
+            "metabolicImpact": {
+                "glucoseStability": "+15%",
+                "lipidReduction": "-5mg/dL",
+                "bpImprovement": "Slightly Lower"
+            },
+            "metabolicBlueprint": {
+                "glucoseTrend": [110, 108, 106, 107, 105, 103, 102],
+                "lipidTrend": [120, 119, 118, 117, 115, 114, 112],
+                "bpTrend": [120, 118, 119, 117, 116, 115, 114],
+                "renalSafetyScore": 95,
+                "summary": "Projected 7-day recovery path based on metabolic synchronization."
+            },
+            "weeklySummary": "Total week strategy", 
+            "hydrationTarget": "2.8L Daily" 
+        }`;
 
     try {
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -556,19 +569,61 @@ export const generateMealPlan = async (patientProfile = {}, lastAnalysis = null)
             body: JSON.stringify({
                 model: OPENAI_MODEL,
                 messages: [
-                    { role: "system", content: "You are a clinical dietitian. Generate a specific, practical, evidence-based full-day meal plan. Return ONLY valid JSON." },
-                    { role: "user", content: `${context}\n\nReturn JSON: { "dailyCalorieTarget": <number>, "macroSplit": { "protein": "%", "carbs": "%", "fat": "%" }, "meals": [{ "meal": "name", "time": "time range", "items": ["food1","food2"], "calories": <number>, "notes": "clinical note" }], "hydrationPlan": "recommendation", "specialNotes": "key point" }` }
+                    { role: "system", content: "You are a clinical dietitian. Your task is to generate a comprehensive 7-day meal plan with specific evidence-based reasons for every food suggestion. Return ONLY valid JSON." },
+                    { role: "user", content: userContent }
                 ],
-                max_tokens: 2000,
+                max_tokens: 4000,
                 temperature: 0.4,
                 response_format: { type: "json_object" }
             })
         });
-        if (!response.ok) throw new Error("Meal plan generation failed");
+        if (!response.ok) throw new Error("7-day plan generation failed");
         const data = await response.json();
         return JSON.parse(data.choices[0].message.content);
     } catch (error) {
         console.error("Meal plan error:", error);
         throw error;
+    }
+};
+
+export const swapMeal = async (originalMeal, userData, clinicalFocus) => {
+    const userContent = `
+        ACT AS A CLINICAL DIETITIANS. 
+        USER PROFILE: ${JSON.stringify(userData)}
+        SWAP REQUEST: Provide ONE alternative meal for "${originalMeal.meal}" (${originalMeal.time}).
+        CLINICAL CONSTRAINT: Must maintain clinical focus: "${clinicalFocus}" and similar calorie/macro profile.
+        
+        RETURN ONLY JSON:
+        {
+            "meal": "Dish Name",
+            "time": "Time",
+            "calories": 450,
+            "macroSplit": { "protein": "30g", "carbs": "45g", "fat": "15g" },
+            "biomarkerTargets": ["HbA1c", "LDL"],
+            "items": ["Ingredient 1", "Ingredient 2"],
+            "clinicalReason": "Reason why this alternative still supports health goals."
+        }`;
+
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+            body: JSON.stringify({
+                model: OPENAI_MODEL,
+                messages: [
+                    { role: "system", content: "You are a senior clinical dietitian. provide a medically sound meal alternative. return only JSON." },
+                    { role: "user", content: userContent }
+                ],
+                max_tokens: 1000,
+                temperature: 0.3,
+                response_format: { type: "json_object" }
+            })
+        });
+        if (!response.ok) throw new Error("Meal swap failed");
+        const data = await response.json();
+        return JSON.parse(data.choices[0].message.content);
+    } catch (error) {
+        console.error("Swap error:", error);
+        return null;
     }
 };
