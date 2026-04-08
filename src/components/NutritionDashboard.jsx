@@ -143,7 +143,7 @@ const NutritionDashboard = ({ user, onLogout }) => {
                     height: patientProfile.height
                 });
                 userUpdateSuccess = true;
-                
+
                 // Refresh cached user data
                 const freshUser = await authService.getMe();
                 setUserName(freshUser.name);
@@ -153,8 +153,8 @@ const NutritionDashboard = ({ user, onLogout }) => {
             }
 
             if (vitalSaveSuccess || userUpdateSuccess) {
-                alert('Success: ' + 
-                    (vitalSaveSuccess ? 'Clinical Vitals saved. ' : '') + 
+                alert('Success: ' +
+                    (vitalSaveSuccess ? 'Clinical Vitals saved. ' : '') +
                     (userUpdateSuccess ? 'User profile updated.' : ''));
             } else {
                 throw new Error(errorMessage || 'Both updates failed.');
@@ -668,13 +668,13 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                                     🧬 Scan Face
                                                 </button> */}
 
-                                                <button
+                                                {/* <button
                                                     onClick={() => setShowHealthHistory(true)}
                                                     className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--card-hover)]"
                                                 >
                                                     <History className="w-4 h-4" />
                                                     📈 View History
-                                                </button>
+                                                </button> */}
                                             </div>
 
                                             <button
