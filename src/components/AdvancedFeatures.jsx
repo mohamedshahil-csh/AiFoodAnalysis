@@ -637,8 +637,11 @@ export const HealthHistoryModal = ({ isOpen, onClose, userId, authService }) => 
         if (isOpen && userId) {
             setIsLoading(true);
             authService.getProfileHistory(userId)
-                .then(data => setHistory(data))
-                .catch(err => console.error("Failed to fetch history:", err))
+                .then(data => setHistory(Array.isArray(data) ? data : []))
+                .catch(err => {
+                    console.error("Failed to fetch history:", err);
+                    setHistory([]);
+                })
                 .finally(() => setIsLoading(false));
         }
     }, [isOpen, userId, authService]);
@@ -692,93 +695,116 @@ export const HealthHistoryModal = ({ isOpen, onClose, userId, authService }) => 
                                             transition={{ delay: i * 0.1 }}
                                             className="p-6 border border-[var(--border)] bg-[var(--card)] rounded-2xl hover:border-[var(--primary)]/30 transition-all group shadow-sm hover:shadow-xl"
                                         >
-                                            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-[var(--border)]">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="p-3 rounded-xl bg-[var(--primary)]/5 border border-[var(--primary)]/10">
-                                                        <Calendar className="w-5 h-5 text-[var(--primary)]" />
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-sm font-black text-[var(--foreground)]">
-                                                            {new Date(record.created_at).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-                                                        </p>
-                                                        <p className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest mt-0.5">
-                                                            Analyzed at {new Date(record.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-6">
-                                                    <div className="text-right">
-                                                        <p className="text-[10px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Body Metrics</p>
-                                                        <p className="text-lg font-black text-[var(--foreground)]">
-                                                            {(record.weight / ((record.height / 100) ** 2)).toFixed(1)} <span className="text-[10px] text-[var(--muted)] uppercase">BMI</span>
-                                                        </p>
-                                                        <p className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-tighter">
-                                                            {record.weight}kg | {record.height}cm
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                            {(() => {
+                                                const dateObj = new Date(record.created_at || record.createdAt || record.timestamp);
+                                                const isValidDate = !isNaN(dateObj.getTime());
+                                                const formattedDate = isValidDate 
+                                                    ? dateObj.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+                                                    : 'Manual Entry / Date Unknown';
+                                                const formattedTime = isValidDate
+                                                    ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                                    : '';
+                                                
+                                                const weight = parseFloat(record.weight);
+                                                const height = parseFloat(record.height);
+                                                const bmi = (weight > 0 && height > 0) 
+                                                    ? (weight / ((height / 100) ** 2)).toFixed(1)
+                                                    : null;
 
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
-                                                        <div className="w-1 h-3 bg-amber-500 rounded-full" /> Metabolic Panel
-                                                    </h4>
-                                                    <div className="space-y-3">
-                                                        <HistoryItem label="HbA1c" value={record.hba1c} unit="%" color="rose" />
-                                                        <HistoryItem label="Fasting Sugar" value={record.fastingBloodSugar} unit="mg/dL" color="amber" />
-                                                        <HistoryItem label="PP Sugar" value={record.postprandialSugar} unit="mg/dL" color="amber" />
-                                                    </div>
-                                                </div>
+                                                return (
+                                                    <>
+                                                        <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-[var(--border)]">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="p-3 rounded-xl bg-[var(--primary)]/5 border border-[var(--primary)]/10">
+                                                                    <Calendar className="w-5 h-5 text-[var(--primary)]" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="text-sm font-black text-[var(--foreground)]">
+                                                                        {formattedDate}
+                                                                    </p>
+                                                                    <p className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest mt-0.5">
+                                                                        {formattedTime ? `Analyzed at ${formattedTime}` : 'Historical Observation'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            {bmi && (
+                                                                <div className="flex items-center gap-6">
+                                                                    <div className="text-right">
+                                                                        <p className="text-[10px] font-black text-[var(--muted)] uppercase tracking-widest mb-1">Body Metrics</p>
+                                                                        <p className="text-lg font-black text-[var(--foreground)]">
+                                                                            {bmi} <span className="text-[10px] text-[var(--muted)] uppercase">BMI</span>
+                                                                        </p>
+                                                                        <p className="text-[9px] font-bold text-[var(--primary)] uppercase tracking-tighter">
+                                                                            {record.weight}kg | {record.height}cm
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
 
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
-                                                        <div className="w-1 h-3 bg-cyan-500 rounded-full" /> Lipid Profile
-                                                    </h4>
-                                                    <div className="space-y-3">
-                                                        <HistoryItem label="Total Cholesterol" value={record.totalCholesterol} unit="mg/dL" color="cyan" />
-                                                        <HistoryItem label="LDL" value={record.ldl} unit="mg/dL" color="cyan" />
-                                                        <HistoryItem label="HDL" value={record.hdl} unit="mg/dL" color="emerald" />
-                                                        <HistoryItem label="Triglycerides" value={record.triglycerides} unit="mg/dL" color="blue" />
-                                                    </div>
-                                                </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                                                            <div className="space-y-4">
+                                                                <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
+                                                                    <div className="w-1 h-3 bg-amber-500 rounded-full" /> Metabolic Panel
+                                                                </h4>
+                                                                <div className="space-y-3">
+                                                                    <HistoryItem label="HbA1c" value={record.hba1c} unit="%" color="rose" />
+                                                                    <HistoryItem label="Fasting Sugar" value={record.fastingBloodSugar} unit="mg/dL" color="amber" />
+                                                                    <HistoryItem label="PP Sugar" value={record.postprandialSugar} unit="mg/dL" color="amber" />
+                                                                </div>
+                                                            </div>
 
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
-                                                        <div className="w-1 h-3 bg-violet-500 rounded-full" /> Renal Metrics
-                                                    </h4>
-                                                    <div className="space-y-3">
-                                                        <HistoryItem label="eGFR" value={record.egfr} unit="mL/min" color="violet" />
-                                                        <HistoryItem label="Creatinine" value={record.creatinine} unit="mg/dL" color="violet" />
-                                                        <HistoryItem label="Uric Acid" value={record.uricAcid} unit="mg/dL" color="violet" />
-                                                    </div>
-                                                </div>
+                                                            <div className="space-y-4">
+                                                                <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
+                                                                    <div className="w-1 h-3 bg-cyan-500 rounded-full" /> Lipid Profile
+                                                                </h4>
+                                                                <div className="space-y-3">
+                                                                    <HistoryItem label="Total Cholesterol" value={record.totalCholesterol} unit="mg/dL" color="cyan" />
+                                                                    <HistoryItem label="LDL" value={record.ldl} unit="mg/dL" color="cyan" />
+                                                                    <HistoryItem label="HDL" value={record.hdl} unit="mg/dL" color="emerald" />
+                                                                    <HistoryItem label="Triglycerides" value={record.triglycerides} unit="mg/dL" color="blue" />
+                                                                </div>
+                                                            </div>
 
-                                                <div className="space-y-4">
-                                                    <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
-                                                        <div className="w-1 h-3 bg-emerald-500 rounded-full" /> Core Vitals
-                                                    </h4>
-                                                    <div className="space-y-3">
-                                                        <HistoryItem label="Blood Pressure" value={record.bpSystolic && record.bpDiastolic ? `${record.bpSystolic}/${record.bpDiastolic}` : null} unit="mmHg" color="foreground" />
-                                                        <HistoryItem label="Heart Rate" value={record.heartRate} unit="BPM" color="rose" />
-                                                        <HistoryItem label="SpO2" value={record.spo2} unit="%" color="cyan" />
-                                                        <HistoryItem label="Hemoglobin" value={record.hemoglobin} unit="g/dL" color="rose" />
-                                                    </div>
-                                                </div>
-                                            </div>
+                                                            <div className="space-y-4">
+                                                                <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
+                                                                    <div className="w-1 h-3 bg-violet-500 rounded-full" /> Renal Metrics
+                                                                </h4>
+                                                                <div className="space-y-3">
+                                                                    <HistoryItem label="eGFR" value={record.egfr} unit="mL/min" color="violet" />
+                                                                    <HistoryItem label="Creatinine" value={record.creatinine} unit="mg/dL" color="violet" />
+                                                                    <HistoryItem label="Uric Acid" value={record.uricAcid} unit="mg/dL" color="violet" />
+                                                                </div>
+                                                            </div>
 
-                                            <div className="mt-8 pt-6 border-t border-[var(--border)] flex flex-wrap gap-4 items-center">
-                                                <div className="flex flex-wrap gap-2 flex-1">
-                                                    <ClinicalBadge label="Condition" value={record.conditions} color="rose" />
-                                                    <ClinicalBadge label="Medication" value={record.medications} color="blue" />
-                                                    <ClinicalBadge label="Allergy" value={record.allergies} color="amber" />
-                                                    <ClinicalBadge label="Occupation" value={record.occupation} color="muted" />
-                                                    <ClinicalBadge label="Gender" value={record.gender} color="muted" />
-                                                </div>
-                                                <div className="text-[9px] font-mono text-[var(--muted)] uppercase tracking-widest bg-[var(--background)] px-3 py-1.5 border border-[var(--border)] rounded-lg">
-                                                    Record ID: #{record.id}-{record.user_id}
-                                                </div>
-                                            </div>
+                                                            <div className="space-y-4">
+                                                                <h4 className="text-[9px] font-black text-[var(--muted)] uppercase tracking-[0.2em] flex items-center gap-2">
+                                                                    <div className="w-1 h-3 bg-emerald-500 rounded-full" /> Core Vitals
+                                                                </h4>
+                                                                <div className="space-y-3">
+                                                                    <HistoryItem label="Blood Pressure" value={record.bpSystolic && record.bpDiastolic ? `${record.bpSystolic}/${record.bpDiastolic}` : null} unit="mmHg" color="foreground" />
+                                                                    <HistoryItem label="Heart Rate" value={record.heartRate} unit="BPM" color="rose" />
+                                                                    <HistoryItem label="SpO2" value={record.spo2} unit="%" color="cyan" />
+                                                                    <HistoryItem label="Hemoglobin" value={record.hemoglobin} unit="g/dL" color="rose" />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-8 pt-6 border-t border-[var(--border)] flex flex-wrap gap-4 items-center">
+                                                            <div className="flex flex-wrap gap-2 flex-1">
+                                                                <ClinicalBadge label="Condition" value={record.conditions} color="rose" />
+                                                                <ClinicalBadge label="Medication" value={record.medications} color="blue" />
+                                                                <ClinicalBadge label="Allergy" value={record.allergies} color="amber" />
+                                                                <ClinicalBadge label="Occupation" value={record.occupation} color="muted" />
+                                                                <ClinicalBadge label="Gender" value={record.gender} color="muted" />
+                                                            </div>
+                                                            <div className="text-[9px] font-mono text-[var(--muted)] uppercase tracking-widest bg-[var(--background)] px-3 py-1.5 border border-[var(--border)] rounded-lg">
+                                                                Record ID: #{record.id || record._id || 'UNK'}-{record.user_id || 'UNK'}
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                );
+                                            })()}
                                         </motion.div>
                                     ))}
                                 </div>

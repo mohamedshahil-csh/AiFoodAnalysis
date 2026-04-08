@@ -160,18 +160,23 @@ export const authService = {
   },
 
   async getProfileHistory(userId) {
-    const token = this.getToken();
-    if (!token) throw new Error('Not authenticated');
-    const res = await fetch(`${BASE_URL}/api/profile/${userId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || 'Failed to fetch history');
-    return data;
+    try {
+      const token = this.getToken();
+      if (!token) throw new Error('Not authenticated');
+      const res = await fetch(`${BASE_URL}/api/profile/${userId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) return []; // Return empty array on error for resilience
+      return Array.isArray(data) ? data : [];
+    } catch (e) {
+      console.error('[authService] getProfileHistory error:', e);
+      return [];
+    }
   },
 
   async saveMeal(mealData) {
