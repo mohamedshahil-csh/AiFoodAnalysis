@@ -20,79 +20,14 @@ import { authService } from '../services/authService';
 const NutritionDashboard = ({ user, onLogout }) => {
     const [userName, setUserName] = useState(user?.name || '');
     const [userEmail, setUserEmail] = useState(user?.email || '');
-
-    useEffect(() => {
-        const loadInitialData = async () => {
-            try {
-                // 1. Fetch User Basic Info
-                const userData = await authService.getMe();
-                setUserName(userData.name || userData.email);
-                setUserEmail(userData.email || '');
-
-                // 2. Fetch Latest Vitals Profile
-                const profileData = await authService.getLatestProfile(userData.id);
-
-                if (profileData) {
-                    // Pre-fill from profile API
-                    setPatientProfile(prev => ({
-                        ...prev,
-                        ...profileData,
-                        // Convert numerical values to string if needed for inputs
-                        weight: profileData.weight || userData.weight || '',
-                        height: profileData.height || userData.height || ''
-                    }));
-                } else {
-                    // Fallback to basic user data for weight/height
-                    setPatientProfile(prev => ({
-                        ...prev,
-                        weight: userData.weight || '',
-                        height: userData.height || ''
-                    }));
-                }
-            } catch (error) {
-                console.error("Initialization error:", error);
-                // Last resort fallback to cache
-                const cached = authService.getUser();
-                if (cached) {
-                    setUserName(cached.name || cached.email);
-                    setUserEmail(cached.email || '');
-                    setPatientProfile(prev => ({
-                        ...prev,
-                        weight: cached.weight || '',
-                        height: cached.height || ''
-                    }));
-                }
-            }
-        };
-
-        loadInitialData();
-    }, []);
+    const [theme, setTheme] = useState('dark');
+    const [debugMsg, setDebugMsg] = useState('');
     const [file, setFile] = useState(null);
     const [preview, setPreview] = useState(null);
     const [base64Data, setBase64Data] = useState(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analysis, setAnalysis] = useState(null);
-    const [theme, setTheme] = useState('dark');
-    const [debugMsg, setDebugMsg] = useState('');
-    const [patientProfile, setPatientProfile] = useState({
-        age: '', gender: '', occupation: '',
-        weight: '', height: '',
-        hba1c: '', fastingBloodSugar: '', postprandialSugar: '',
-        bpSystolic: '', bpDiastolic: '',
-        totalCholesterol: '', ldl: '', hdl: '', triglycerides: '',
-        egfr: '', creatinine: '', uricAcid: '',
-        tsh: '', hemoglobin: '', heartRate: '', spo2: '',
-        conditions: '', medications: '', allergies: '',
-        // Expanded NeuroVitals
-        map: '', pulsePressure: '', cardiacWorkload: '',
-        respirationRate: '', prq: '', heartAge: '',
-        wellnessScore: '', riskClass: '', confidence: '',
-        ascvdRisk: '', bpRisk: '', glucoseRisk: '',
-        cholesterolRisk: '', anemiaRisk: '', fallRisk: ''
-    });
     const [showProfile, setShowProfile] = useState(true);
-    const fileInputRef = useRef(null);
-    const dashboardRef = useRef(null);
     const [showMealHistory, setShowMealHistory] = useState(false);
     const [showMealPlan, setShowMealPlan] = useState(false);
     const [mealPlan, setMealPlan] = useState(null);
@@ -102,12 +37,99 @@ const NutritionDashboard = ({ user, onLogout }) => {
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
     const [showHealthReport, setShowHealthReport] = useState(false);
     const [showFaceScanner, setShowFaceScanner] = useState(false);
+    
+    const [patientProfile, setPatientProfile] = useState({
+        age: '', gender: '', occupation: '',
+        weight: '', height: '',
+        hba1c: '', fastingBloodSugar: '', postprandialSugar: '',
+        bpSystolic: '', bpDiastolic: '',
+        totalCholesterol: '', ldl: '', hdl: '', triglycerides: '',
+        egfr: '', creatinine: '', uricAcid: '',
+        tsh: '', hemoglobin: '', heartRate: '', spo2: '',
+        conditions: '', medications: '', allergies: '',
+        map: '', pulsePressure: '', cardiacWorkload: '',
+        respirationRate: '', prq: '', heartAge: '',
+        wellnessScore: '', riskClass: '', confidence: '',
+        ascvdRisk: '', bpRisk: '', glucoseRisk: '',
+        cholesterolRisk: '', anemiaRisk: '', fallRisk: ''
+    });
+
+    const fileInputRef = useRef(null);
+    const dashboardRef = useRef(null);
 
     const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
     const updateProfile = (field, value) => {
         setPatientProfile(prev => ({ ...prev, [field]: value }));
     };
+
+    // ── Persistence: Save Draft Profile & Image to localStorage ──
+    useEffect(() => {
+        if (patientProfile.age || patientProfile.weight || patientProfile.height) {
+            localStorage.setItem('draftProfile', JSON.stringify(patientProfile));
+        }
+    }, [patientProfile]);
+
+    useEffect(() => {
+        if (base64Data) {
+            localStorage.setItem('draftPhoto', base64Data);
+        }
+    }, [base64Data]);
+
+    // ── Persistence: Restore Draft on Mount (as fallback) ──
+    const restoreDraft = useCallback(() => {
+        // Restore Profile
+        const savedProfile = localStorage.getItem('draftProfile');
+        if (savedProfile) {
+            try {
+                const parsed = JSON.parse(savedProfile);
+                setPatientProfile(prev => ({ ...prev, ...parsed }));
+            } catch (e) {}
+        }
+        
+        // Restore Photo
+        const savedPhoto = localStorage.getItem('draftPhoto');
+        if (savedPhoto) {
+            setBase64Data(savedPhoto);
+            setPreview(savedPhoto); 
+            setDebugMsg("Last capture recovered.");
+        }
+    }, []);
+
+    useEffect(() => {
+        const loadInitialData = async () => {
+            try {
+                // 1. Restore from Draft first for speed/offline resiliency
+                restoreDraft();
+
+                // 2. Fetch User Basic Info
+                const userData = await authService.getMe();
+                setUserName(userData.name || userData.email);
+                setUserEmail(userData.email || '');
+
+                // 3. Fetch Latest Vitals Profile from DB
+                const profileData = await authService.getLatestProfile(userData.id);
+
+                if (profileData) {
+                    setPatientProfile(prev => ({
+                        ...prev,
+                        ...profileData,
+                        weight: profileData.weight || userData.weight || '',
+                        height: profileData.height || userData.height || ''
+                    }));
+                }
+            } catch (error) {
+                console.error("Initialization error:", error);
+                const cached = authService.getUser();
+                if (cached) {
+                    setUserName(cached.name || cached.email);
+                    setUserEmail(cached.email || '');
+                }
+            }
+        };
+
+        loadInitialData();
+    }, [restoreDraft]);
 
     const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
     const handleUpdateProfile = async () => {
@@ -174,44 +196,49 @@ const NutritionDashboard = ({ user, onLogout }) => {
     const handleFileUpload = (e) => {
         try {
             const f = e.target.files?.[0];
-            if (!f) { setDebugMsg('No file selected'); return; }
+            if (!f) return;
 
-            const name = f.name;
-            const sizeKB = (f.size / 1024).toFixed(0);
-            setDebugMsg(`[1/3] Selected: ${name} (${sizeKB}KB, ${f.type})`);
+            // 1. Memory-Safe UI Preview
+            const objUrl = URL.createObjectURL(f);
+            setPreview(objUrl);
+            setFile(f);
+            setBase64Data(null); 
 
-            // Try createImageBitmap first (best for mobile - no FileReader needed)
+            setDebugMsg(`Analyzing specimen: ${(f.size / 1024).toFixed(0)}KB...`);
+
+            // 2. Aggressive Resize & Background Storage
+            const processImage = (imgSource) => {
+                const w_orig = imgSource.width;
+                const h_orig = imgSource.height;
+
+                let w = w_orig, h = h_orig;
+                const maxDim = 1024;
+                if (w > maxDim || h > maxDim) {
+                    if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
+                    else { w = Math.round(w * maxDim / h); h = maxDim; }
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(imgSource, 0, 0, w, h);
+                
+                const b64 = canvas.toDataURL('image/jpeg', 0.8);
+                setBase64Data(b64);
+                
+                // Cleanup
+                if (imgSource.close) imgSource.close();
+                setDebugMsg(`Specimen stabilized (${w}x${h}). Ready for analysis.`);
+            };
+
             if (typeof createImageBitmap === 'function') {
-                createImageBitmap(f).then(bitmap => {
-                    setDebugMsg(`[2/3] Loaded: ${bitmap.width}x${bitmap.height} — compressing...`);
-                    let w = bitmap.width, h = bitmap.height;
-                    const maxDim = 1024;
-                    if (w > maxDim || h > maxDim) {
-                        if (w > h) { h = Math.round(h * maxDim / w); w = maxDim; }
-                        else { w = Math.round(w * maxDim / h); h = maxDim; }
-                    }
-                    const canvas = document.createElement('canvas');
-                    canvas.width = w;
-                    canvas.height = h;
-                    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-                    bitmap.close(); // free memory
-                    const compressed = canvas.toDataURL('image/jpeg', 0.7);
-
-                    // Set ALL state at once — compressed image is small enough for mobile
-                    setPreview(compressed);
-                    setBase64Data(compressed);
-                    setFile(f);
-                    setDebugMsg(`[3/3] ✅ Ready! ${w}x${h} (${(compressed.length / 1024).toFixed(0)}KB)`);
-                }).catch(err => {
-                    setDebugMsg(`createImageBitmap failed: ${err.message} — trying fallback...`);
-                    fallbackReadFile(f, name, sizeKB);
-                });
+                createImageBitmap(f).then(processImage).catch(() => fallbackReadFile(f));
             } else {
-                setDebugMsg('No createImageBitmap — using fallback...');
-                fallbackReadFile(f, name, sizeKB);
+                fallbackReadFile(f);
             }
         } catch (err) {
-            setDebugMsg('UPLOAD ERROR: ' + err.message);
+            setDebugMsg('ERROR: ' + err.message);
         }
     };
 
@@ -660,13 +687,13 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                     {showProfile && (
                                         <div className="px-5 pb-5 space-y-5">
                                             <div className="grid grid-cols-1 gap-3 mb-2">
-                                                {/* <button
+                                                <button
                                                     onClick={() => setShowFaceScanner(true)}
                                                     className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
                                                 >
                                                     <Scan className="w-4 h-4" />
                                                     🧬 Scan Face
-                                                </button> */}
+                                                </button>
 
                                                 {/* <button
                                                     onClick={() => setShowHealthHistory(true)}
@@ -1502,6 +1529,7 @@ const NutritionDashboard = ({ user, onLogout }) => {
                 authService={authService}
             />
             <MealPlanModal isOpen={showMealPlan} onClose={() => setShowMealPlan(false)} mealPlan={mealPlan} isLoading={isGeneratingPlan} />
+
             <FaceScanner
                 isOpen={showFaceScanner}
                 onClose={() => setShowFaceScanner(false)}
