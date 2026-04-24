@@ -21,18 +21,24 @@ export async function analyzeVideo(videoBlob, age = 25, gender = 'auto', metadat
     if (metadata.stability) formData.append('stability_score', String(metadata.stability));
     if (metadata.lighting) formData.append('lighting_level', String(metadata.lighting));
 
+    console.log(`[faceVitalService] analyzeVideo calling: ${API_BASE}/analyze`);
     const response = await fetch(`${API_BASE}/analyze`, {
         method: 'POST',
         body: formData,
     });
 
+    console.log(`[faceVitalService] analyzeVideo status: ${response.status}`);
+
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
+        console.error(`[faceVitalService] analyzeVideo error:`, errData);
         const detail = errData.detail || `Analysis failed (HTTP ${response.status})`;
         throw new Error(detail);
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`[faceVitalService] analyzeVideo success:`, data);
+    return data;
 }
 
 /**
@@ -42,16 +48,22 @@ export async function detectGender(imageBlob) {
     const formData = new FormData();
     formData.append('file', imageBlob, 'frame.jpg');
 
+    console.log(`[faceVitalService] detectGender calling: ${API_BASE}/detect_gender`);
     const response = await fetch(`${API_BASE}/detect_gender`, {
         method: 'POST',
         body: formData,
     });
 
+    console.log(`[faceVitalService] detectGender status: ${response.status}`);
+
     if (!response.ok) {
+        console.error(`[faceVitalService] detectGender failed with status: ${response.status}`);
         throw new Error('Gender detection request failed');
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`[faceVitalService] detectGender success:`, data);
+    return data;
 }
 
 /**
@@ -138,23 +150,32 @@ export async function checkBackendHealth() {
     try {
         // Ensure we don't have double slashes if API_BASE already has one
         const baseUrl = API_BASE.replace(/\/$/, '');
+        console.log(`[faceVitalService] checkBackendHealth calling: ${baseUrl}/`);
+        
         const response = await fetch(`${baseUrl}/`, { 
             method: 'GET',
             headers: { 'Accept': 'application/json' }
         });
         
+        console.log(`[faceVitalService] checkBackendHealth status: ${response.status}`);
+        
         if (!response.ok) {
+            console.warn(`[faceVitalService] Health check failed for ${baseUrl}/, status: ${response.status}`);
             // Fallback: if root fails, try without trailing slash or just check if detect_gender exists
+            console.log(`[faceVitalService] Attempting fallback health check: ${baseUrl}`);
             const altResponse = await fetch(baseUrl, { method: 'GET' });
+            console.log(`[faceVitalService] Fallback health check status: ${altResponse.status}`);
+            
             if (!altResponse.ok) return false;
             const data = await altResponse.json();
             return String(data.status || '').toLowerCase() === 'ok';
         }
 
         const data = await response.json();
+        console.log(`[faceVitalService] checkBackendHealth success:`, data);
         return String(data.status || '').toLowerCase() === 'ok' || data.service === 'NeuroVitals rPPG API';
     } catch (err) {
-        console.error("[faceVitalService] Health check failed:", err);
+        console.error("[faceVitalService] Health check fatal error:", err);
         return false;
     }
 }

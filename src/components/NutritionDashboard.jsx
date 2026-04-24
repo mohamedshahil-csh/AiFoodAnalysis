@@ -37,7 +37,7 @@ const NutritionDashboard = ({ user, onLogout }) => {
     const [isGeneratingReport, setIsGeneratingReport] = useState(false);
     const [showHealthReport, setShowHealthReport] = useState(false);
     const [showFaceScanner, setShowFaceScanner] = useState(false);
-    
+
     const [patientProfile, setPatientProfile] = useState({
         age: '', gender: '', occupation: '',
         weight: '', height: '',
@@ -84,14 +84,14 @@ const NutritionDashboard = ({ user, onLogout }) => {
             try {
                 const parsed = JSON.parse(savedProfile);
                 setPatientProfile(prev => ({ ...prev, ...parsed }));
-            } catch (e) {}
+            } catch (e) { }
         }
-        
+
         // Restore Photo
         const savedPhoto = localStorage.getItem('draftPhoto');
         if (savedPhoto) {
             setBase64Data(savedPhoto);
-            setPreview(savedPhoto); 
+            setPreview(savedPhoto);
             setDebugMsg("Last capture recovered.");
         }
     }, []);
@@ -202,7 +202,7 @@ const NutritionDashboard = ({ user, onLogout }) => {
             const objUrl = URL.createObjectURL(f);
             setPreview(objUrl);
             setFile(f);
-            setBase64Data(null); 
+            setBase64Data(null);
 
             setDebugMsg(`Analyzing specimen: ${(f.size / 1024).toFixed(0)}KB...`);
 
@@ -223,10 +223,10 @@ const NutritionDashboard = ({ user, onLogout }) => {
                 canvas.height = h;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(imgSource, 0, 0, w, h);
-                
+
                 const b64 = canvas.toDataURL('image/jpeg', 0.8);
                 setBase64Data(b64);
-                
+
                 // Cleanup
                 if (imgSource.close) imgSource.close();
                 setDebugMsg(`Specimen stabilized (${w}x${h}). Ready for analysis.`);
@@ -687,13 +687,13 @@ const NutritionDashboard = ({ user, onLogout }) => {
                                     {showProfile && (
                                         <div className="px-5 pb-5 space-y-5">
                                             <div className="grid grid-cols-1 gap-3 mb-2">
-                                                <button
+                                                {/* <button
                                                     onClick={() => setShowFaceScanner(true)}
                                                     className="w-full py-3.5 rounded-xl text-[9px] font-black uppercase tracking-[0.15em] transition-all flex items-center justify-center gap-2 active:scale-[0.98] bg-gradient-to-r from-cyan-600 to-violet-500 text-white hover:from-cyan-700 hover:to-violet-600 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
                                                 >
                                                     <Scan className="w-4 h-4" />
                                                     🧬 Scan Face
-                                                </button>
+                                                </button> */}
 
                                                 {/* <button
                                                     onClick={() => setShowHealthHistory(true)}

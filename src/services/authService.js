@@ -1,4 +1,5 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://aifoodanalysisbackendnode.onrender.com';
+console.log(`[authService] Using BASE_URL: ${BASE_URL}`);
 const API_BASE = `${BASE_URL}/api/users`;
 
 export const authService = {
